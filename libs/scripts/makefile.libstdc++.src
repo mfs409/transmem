@@ -1,0 +1,311 @@
+#
+# Set up tools
+#
+CXX=gcc
+GCC_INSTALL = $(shell which gcc | sed 's+/bin/gcc++')
+AR=ar
+RANLIB=ranlib
+
+#
+# Set up build folders
+#
+ODIR64 := ./obj64
+ODIR32 := ./obj32
+o64_folder := $(shell mkdir -p $(ODIR64))
+o32_folder := $(shell mkdir -p $(ODIR32))
+
+#
+# All the flags.  Note that this is sloppy, since we're trying to re-create a whole lot of build rules that come from a configure script
+#
+# 64-bit builds
+F64_1 = -shared-libgcc -nostdinc++ -I../../libgcc -I../include/x86_64-unknown-linux-gnu -I../include -I../libsupc++
+F64_2 = -D_GLIBCXX_SHARED -fno-implicit-templates -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+F64_3 = -fPIC -DPIC -D_GLIBCXX_SHARED
+F64_4 = -g -O2 -D_GNU_SOURCE
+F64_CONCEPT = -D_GLIBCXX_CONCEPT_CHECKS -fimplicit-templates
+F64_PARALLEL = -D_GLIBCXX_PARALLEL
+F64_COW = -D_GLIBCXX_USE_CXX11_ABI=0 -fimplicit-templates
+F64_STRSTREAM = -I../include/backward -Wno-deprecated
+F64_CXX11 = -std=gnu++11
+F64_TEMPLATES = -fimplicit-templates
+F64_5 = -D_GLIBCXX_SHARED -std=gnu++14 -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+F64_6 = -shared-libgcc -nostdinc++ -I../include/x86_64-unknown-linux-gnu -I../include -I../libsupc++ -std=gnu++98 -fPIC -DPIC -fno-implicit-templates -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+F64_7 = -g -O2 -D_GNU_SOURCE
+#
+# 32-bit builds
+F32_1 = -shared-libgcc -nostdinc++ -m32 -I../../libgcc -I../include/x86_64-unknown-linux-gnu -I../include -I../libsupc++ -std=gnu++98 -D_GLIBCXX_SHARED -fno-implicit-templates -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+F32_2 = -g -O2 -D_GNU_SOURCE -m32
+F32_STRSTREAM = -I../include/backward -Wno-deprecated
+F32_3 = -shared-libgcc -nostdinc++ -m32 -I../../libgcc -I../include/x86_64-unknown-linux-gnu -I../include -I../libsupc++ -std=gnu++11 -D_GLIBCXX_SHARED -fno-implicit-templates -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+F32_4 = -shared-libgcc -nostdinc++ -m32 -I../../libgcc -I../include/x86_64-unknown-linux-gnu -I../include -I../libsupc++ -D_GLIBCXX_SHARED -std=gnu++14 -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+F32_5 = -shared-libgcc -nostdinc++ -m32 -I../include/x86_64-unknown-linux-gnu -I../include -I../libsupc++ -std=gnu++98 -fPIC -DPIC -fno-implicit-templates -Wall -Wextra -Wwrite-strings -Wcast-qual -Wabi -fdiagnostics-show-location=once -ffunction-sections -fdata-sections
+
+#
+# Input file names
+#
+
+#
+# c++98 
+S1 = concept-inst
+S2 = parallel_settings
+S3 = collate_members_cow messages_members_cow monetary_members_cow numeric_members_cow
+S4 = strstream
+S5 = locale_init localename
+S6 = allocator-inst atomicity basic_file bitmap_allocator c++locale codecvt codecvt_members collate_members complex_io cow-istream-string ext-inst globals_io hash_tr1 hashtable_tr1 ios_failure ios_init ios_locale istream-string istream list-aux-2 list-aux list list_associated-2 list_associated locale locale_facets math_stubs_float math_stubs_long_double messages_members misc-inst monetary_members mt_allocator numeric_members pool_allocator stdexcept streambuf time_members tree valarray
+#
+# c++11
+S7 = hashtable_c++0x
+S8 = chrono codecvt11 condition_variable cow-stdexcept ctype debug functexcept functional futex future hash_c++0x ios limits mutex placeholders random regex shared_ptr snprintf_lite system_error thread cow-locale_init cow-shim_facets cxx11-hash_tr1 cxx11-ios_failure cxx11-shim_facets cxx11-stdexcept ctype_configure_char ctype_members cow-fstream-inst cow-sstream-inst cow-string-inst cow-wstring-inst cxx11-locale-inst cxx11-wlocale-inst ext11-inst fstream-inst ios-inst iostream-inst istream-inst locale-inst ostream-inst sstream-inst streambuf-inst string-inst wlocale-inst wstring-inst
+#
+# filesystem
+S9 = dir ops path
+#
+# compatibility
+S10 = compatibility compatibility-debug_list compatibility-debug_list-2
+S11 = compatibility-c++0x compatibility-atomic-c++0x compatibility-thread-c++0x compatibility-chrono compatibility-condvar
+#
+# libraries
+L1 = libc++98convenience
+L2 = libc++11convenience
+L3 = libstdc++fs
+L4 = libstdc++.so
+
+#
+# Output file names
+#
+
+# output files for 64-bit
+#
+# c++98
+O64_1 = $(patsubst %, $(ODIR64)/%.o, $(S1))
+O64_2 = $(patsubst %, $(ODIR64)/%.o, $(S2))
+O64_3 = $(patsubst %, $(ODIR64)/%.o, $(S3))
+O64_4 = $(patsubst %, $(ODIR64)/%.o, $(S4))
+O64_5 = $(patsubst %, $(ODIR64)/%.o, $(S5))
+O64_6 = $(patsubst %, $(ODIR64)/%.o, $(S6))
+#
+# c++11
+O64_7 = $(patsubst %, $(ODIR64)/%.o, $(S7))
+O64_8 = $(patsubst %, $(ODIR64)/%.o, $(S8))
+#
+# filesystem
+O64_9 = $(patsubst %, $(ODIR64)/%.o, $(S9))
+#
+# compatibility (tricky... gotta do each one twice)
+O64_10a = $(patsubst %, $(ODIR64)/pic_%.o, $(S10))
+O64_10b = $(patsubst %, $(ODIR64)/nopic_%.o, $(S10))
+O64_11a = $(patsubst %, $(ODIR64)/pic_%.o, $(S11))
+O64_11b = $(patsubst %, $(ODIR64)/nopic_%.o, $(S11))
+#
+# libraries
+A64_1 = $(patsubst %, $(ODIR64)/%.a, $(L1))
+A64_2 = $(patsubst %, $(ODIR64)/%.a, $(L2))
+A64_3 = $(patsubst %, $(ODIR64)/%.a, $(L3))
+#
+# shared objects
+SO64 = $(patsubst %, $(ODIR64)/%, $(L4))
+
+# output files for 32-bit
+#
+# c++98
+O32_1 = $(patsubst %, $(ODIR32)/%.o, $(S1))
+O32_2 = $(patsubst %, $(ODIR32)/%.o, $(S2))
+O32_3 = $(patsubst %, $(ODIR32)/%.o, $(S3))
+O32_4 = $(patsubst %, $(ODIR32)/%.o, $(S4))
+O32_5 = $(patsubst %, $(ODIR32)/%.o, $(S5))
+O32_6 = $(patsubst %, $(ODIR32)/%.o, $(S6))
+#
+# c++11
+O32_7 = $(patsubst %, $(ODIR32)/%.o, $(S7))
+O32_8 = $(patsubst %, $(ODIR32)/%.o, $(S8))
+#
+# filesystem
+O32_9 = $(patsubst %, $(ODIR32)/%.o, $(S9))
+#
+# compatibility (tricky... gotta do each one twice)
+O32_10a = $(patsubst %, $(ODIR32)/pic_%.o, $(S10))
+O32_10b = $(patsubst %, $(ODIR32)/nopic_%.o, $(S10))
+O32_11a = $(patsubst %, $(ODIR32)/pic_%.o, $(S11))
+O32_11b = $(patsubst %, $(ODIR32)/nopic_%.o, $(S11))
+#
+# libraries
+A32_1 = $(patsubst %, $(ODIR32)/%.a, $(L1))
+A32_2 = $(patsubst %, $(ODIR32)/%.a, $(L2))
+A32_3 = $(patsubst %, $(ODIR32)/%.a, $(L3))
+#
+# shared objects
+SO32 = $(patsubst %, $(ODIR32)/%, $(L4))
+
+#
+# Target info
+#
+.DEFAULT_GOAL = all
+.PHONY: all clean
+
+#
+# Targets
+#
+all: $(SO64) $(SO32)
+clean:
+	rm -rf $(ODIR32) $(ODIR64)
+
+#
+# Build rules
+#
+
+# build rules for 64-bit .o files
+#
+# c++98
+$(O64_1): $(ODIR64)/%.o: c++98/%.cc
+	$(CXX) $(F64_1) -std=gnu++98 $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) $(F64_CONCEPT) -c $< $(F64_3) -o $@
+$(O64_2): $(ODIR64)/%.o: c++98/%.cc
+	$(CXX) $(F64_1) -std=gnu++98 $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) $(F64_PARALLEL) -c $< $(F64_3) -o $@
+$(O64_3): $(ODIR64)/%.o: c++98/%.cc
+	$(CXX) $(F64_1) -std=gnu++98 $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) $(F64_COW) -c $< $(F64_3) -o $@
+$(O64_4): $(ODIR64)/%.o: c++98/%.cc
+	$(CXX) $(F64_1) -std=gnu++98 $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) $(F64_STRSTREAM) -c $< $(F64_3) -o $@
+$(O64_5): $(ODIR64)/%.o: c++98/%.cc
+	$(CXX) $(F64_1) -std=gnu++98 $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) $(F64_CXX11) -c $< $(F64_3) -o $@
+$(O64_6): $(ODIR64)/%.o: c++98/%.cc
+	$(CXX) $(F64_1) -std=gnu++98 $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) -c $< $(F64_3) -o $@
+#
+# c++11
+$(O64_7): $(ODIR64)/%.o: c++11/%.cc
+	$(CXX) $(F64_1) $(F64_CXX11) $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) $(F64_TEMPLATES) -c $< $(F64_3) -o $@
+$(O64_8): $(ODIR64)/%.o: c++11/%.cc
+	$(CXX) $(F64_1) $(F64_CXX11) $(F64_2) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) -c $< $(F64_3) -o $@
+#
+# filesystem
+$(O64_9): $(ODIR64)/%.o: filesystem/%.cc
+	$(CXX) $(F64_1) $(F64_5) -frandom-seed=$(basename $(notdir $@)).lo $(F64_4) -c $< $(F64_3) -o $@
+#
+# compatibility
+$(O64_10a): $(ODIR64)/pic_%.o: c++98/%.cc
+	$(CXX) $(F64_6)  -frandom-seed=$(basename $(notdir $<)).lo $(F64_7) -c $<  $(F64_3) -o $@
+$(O64_10b): $(ODIR64)/nopic_%.o: c++98/%.cc
+	$(CXX) $(F64_6)  -frandom-seed=$(basename $(notdir $<)).lo $(F64_7) -c $< -o $@
+$(O64_11a): $(ODIR64)/pic_%.o: c++11/%.cc
+	$(CXX) $(F64_6)  -frandom-seed=$(basename $(notdir $<)).lo $(F64_7) -std=gnu++11 -c $<  $(F64_3) -o $@
+$(O64_11b): $(ODIR64)/nopic_%.o: c++11/%.cc
+	$(CXX) $(F64_6)  -frandom-seed=$(basename $(notdir $<)).lo $(F64_7) -std=gnu++11 -c $< -o $@
+
+# build rules for 32-bit .o files
+#
+# c++98
+$(O32_1): $(ODIR32)/%.o: c++98/%.cc
+	$(CXX) $(F32_1) $(SEED) $(F32_2)  $(F64_CONCEPT) -c $< $(F64_3) -o $@
+$(O32_2): $(ODIR32)/%.o: c++98/%.cc
+	$(CXX) $(F32_1) $(SEED) $(F32_2)  $(F64_PARALLEL) -c $<  $(F64_3) -o $@
+$(O32_3): $(ODIR32)/%.o: c++98/%.cc
+	$(CXX) $(F32_1) $(SEED) $(F32_2)  $(F64_COW) -c $<  $(F64_3) -o $@
+$(O32_4): $(ODIR32)/%.o: c++98/%.cc
+	$(CXX) $(F32_1) $(SEED) $(F32_2)  $(F32_STRSTREAM) -c $< $(F64_3) -o $@
+$(O32_5): $(ODIR32)/%.o: c++98/%.cc
+	$(CXX) $(F32_1) $(SEED) $(F32_2)  -std=gnu++11 -c $<  $(F64_3) -o $@
+$(O32_6): $(ODIR32)/%.o: c++98/%.cc
+	$(CXX) $(F32_1) $(SEED) $(F32_2)  -c $<  $(F64_3) -o $@
+#
+# c++11
+$(O32_7): $(ODIR32)/%.o: c++11/%.cc
+	$(CXX) $(F32_3) $(SEED) $(F32_2)  $(F64_TEMPLATES) -c $< $(F64_3) -o $@
+$(O32_8): $(ODIR32)/%.o: c++11/%.cc
+	$(CXX) $(F32_3) $(SEED) $(F32_2)  -c $<  $(F64_3) -o $@
+#
+# filesystem
+$(O32_9): $(ODIR32)/%.o: filesystem/%.cc
+	$(CXX) $(F32_4) $(SEED) $(F32_2)  -c $<  $(F64_3) -o $@
+#
+# compatibility
+$(O32_10a): $(ODIR32)/pic_%.o: c++98/%.cc
+	$(CXX) $(F32_5)  $(SEED) $(F32_2) -c $<  $(F64_3) -o $@
+$(O32_10b): $(ODIR32)/nopic_%.o: c++98/%.cc
+	$(CXX) $(F32_5)  $(SEED) $(F32_2) -c $< -o $@
+$(O32_11a): $(ODIR32)/pic_%.o: c++11/%.cc
+	$(CXX) $(F32_5)  $(SEED) $(F32_2) -std=gnu++11 -c $<  $(F64_3) -o $@
+$(O32_11b): $(ODIR32)/nopic_%.o: c++11/%.cc
+	$(CXX) $(F32_5)  $(SEED) $(F32_2) -std=gnu++11 -c $< -o $@
+
+# build rules for 64-bit .a files (NB: no .a for compat)
+#
+# c++98
+$(A64_1): $(O64_1) $(O64_2) $(O64_3) $(O64_4) $(O64_5) $(O64_6)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
+#
+# c++11
+$(A64_2): $(O64_7) $(O64_8)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
+#
+# filesystem
+$(A64_3): $(O64_9)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
+
+# build rules for 32-bit .a files (NB: no .a for compat)
+#
+# c++98
+$(A32_1): $(O32_1) $(O32_2) $(O32_3) $(O32_4) $(O32_5) $(O32_6)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
+#
+# c++11
+$(A32_2): $(O32_7) $(O32_8)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
+#
+# filesystem
+$(A32_3): $(O32_9)
+	$(AR) rc $@ $^
+	$(RANLIB) $@
+
+#
+# build rules for 64-bit .so files
+# NB: we copy instead of linking
+# NB: we don't support static linking to a .a
+$(SO64): $(A64_1) $(A64_2) $(A64_3) $(O64_10a) $(O64_10b) $(O64_11a) $(O64_11b)
+	cp ../gnu.ver libstdc++-symbols.ver64.tmp
+	chmod +w libstdc++-symbols.ver64.tmp
+	if test "x../float128.ver" != x; then \
+	 	  if grep '^# Appended to version file.' \
+	 	       ../float128.ver /dev/null > /dev/null 2>&1; then \
+	 	    cat ../float128.ver >> libstdc++-symbols.ver64.tmp; \
+	 	  else \
+	 	    sed -n '1,/DO NOT DELETE/p' libstdc++-symbols.ver64.tmp > tmp.top; \
+	 	    sed -n '/DO NOT DELETE/,$p' libstdc++-symbols.ver64.tmp > tmp.bottom; \
+	 	    cat tmp.top ../float128.ver tmp.bottom > libstdc++-symbols.ver64.tmp; \
+	 	    rm tmp.top tmp.bottom; \
+		  fi; \
+	fi
+	/bin/grep -E -v '^[ 	]*#(#| |$$)' libstdc++-symbols.ver64.tmp | $(CXX) -E -P -include ../config.h - > libstdc++-symbols.ver64 || (rm -f libstdc++-symbols.ver64 ; exit 1)
+	rm -f libstdc++-symbols.ver64.tmp
+	$(CXX) -shared-libgcc -nostdinc++ $(F64_3) -shared -nostdlib /usr/lib/../lib64/crti.o $(GCC_INSTALL)/lib/gcc/x86_64-unknown-linux-gnu/6.0.0/crtbeginS.o  $(O64_10a) $(O64_11a) -Wl,--whole-archive ../libsupc++/$(ODIR64)/libsupc++convenience.a $(ODIR64)/libc++98convenience.a $(ODIR64)/libc++11convenience.a -Wl,--no-whole-archive  -lm  -L/lib/../lib64 -L/usr/lib/../lib64 -lc -lgcc_s $(GCC_INSTALL)/lib/gcc/x86_64-unknown-linux-gnu/6.0.0/crtendS.o /usr/lib/../lib64/crtn.o  -Wl,-O1 -Wl,-z -Wl,relro -Wl,--gc-sections -Wl,--version-script=libstdc++-symbols.ver64   -Wl,-soname -Wl,libstdc++.so.6 -o $@
+	rm -f libstdc++-symbols.ver64
+	cp $@ $@.6
+	cp $@ $@.6.0.22
+
+#
+# build rules for 32-bit .so files
+# NB: we copy instead of linking
+# NB: we don't support static linking to a .a
+$(SO32): $(A32_1) $(A32_2) $(A32_3) $(O32_10a) $(O32_10b) $(O32_11a) $(O32_11b)
+	cp ../gnu.ver libstdc++-symbols.ver32.tmp
+	chmod +w libstdc++-symbols.ver32.tmp
+	if test "x../float128.ver" != x; then \
+	 	  if grep '^# Appended to version file.' \
+	 	       ../float128.ver /dev/null > /dev/null 2>&1; then \
+	 	    cat ../float128.ver >> libstdc++-symbols.ver32.tmp; \
+	 	  else \
+	 	    sed -n '1,/DO NOT DELETE/p' libstdc++-symbols.ver32.tmp > tmp.top; \
+	 	    sed -n '/DO NOT DELETE/,$p' libstdc++-symbols.ver32.tmp > tmp.bottom; \
+	 	    cat tmp.top ../float128.ver tmp.bottom > libstdc++-symbols.ver32.tmp; \
+	 	    rm tmp.top tmp.bottom; \
+		  fi; \
+	fi
+	/bin/grep -E -v '^[ 	]*#(#| |$$)' libstdc++-symbols.ver32.tmp | $(CXX) -m32 -E -P -include ../config.h - > libstdc++-symbols.ver32 || (rm -f libstdc++-symbols.ver32 ; exit 1)
+	rm -f libstdc++-symbols.ver32.tmp
+	$(CXX) -shared-libgcc -nostdinc++ -m32 $(F64_3) -shared -nostdlib /usr/lib/../lib/crti.o $(GCC_INSTALL)/lib/gcc/x86_64-unknown-linux-gnu/6.0.0/32/crtbeginS.o  $(O32_10a) $(O32_11a) -Wl,--whole-archive ../libsupc++/$(ODIR32)/libsupc++convenience.a $(ODIR32)/libc++98convenience.a $(ODIR32)/libc++11convenience.a -Wl,--no-whole-archive  -lm  -L/lib/../lib64 -L/usr/lib/../lib64 -lc -lgcc_s $(GCC_INSTALL)/lib/gcc/x86_64-unknown-linux-gnu/6.0.0/32/crtendS.o /usr/lib/../lib/crtn.o -m32  -Wl,-O1 -Wl,-z -Wl,relro -Wl,--gc-sections -Wl,--version-script=libstdc++-symbols.ver32   -Wl,-soname -Wl,libstdc++.so.6 -o $@
+	rm -f libstdc++-symbols.ver32
+	cp $@ $@.6
+	cp $@ $@.6.0.22
+
