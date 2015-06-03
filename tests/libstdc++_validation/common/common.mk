@@ -133,10 +133,11 @@ $(ODIR)/%_trace.o: %.cc
 # Note, though, that for our code, this can result in some warnings for
 # multiply-defined macros.
 #
-$(ODIR)/bench_tm: $(patsubst %, %.cc, $(CXXFILES))
-	cat $(patsubst %, %.cc, $(CXXFILES)) > tmp.cc
-	$(CXX) $(CXXFLAGS_TM) $(LDFLAGS_TM) -Wl,--verbose tmp.cc -o $@ 
-	rm tmp.cc
+# Note, too, that we require TM_OFILES, since it helps with compilation bugs
+# to work on individual files
+#
+$(ODIR)/bench_tm: $(TM_OFILES) $(patsubst %, %.cc, $(CXXFILES))
+	cat $(patsubst %, %.cc, $(CXXFILES)) | $(CXX) -x c++ $(CXXFLAGS_TM) $(LDFLAGS_TM) -o $@ -
 
 #
 # On the bright side, notm and trace builds work just fine...
