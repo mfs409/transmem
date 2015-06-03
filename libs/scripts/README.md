@@ -6,10 +6,10 @@ between transmem code and the code in repositories on which the transmem
 repository depends.
 
 Contents
-=====
-
-libstdc++ update script
 -----
+
+### libstdc++ update script
+
 
 This script consists of three files:
   - update_libstdc++.sh
