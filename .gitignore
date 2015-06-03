@@ -1,1 +1,3 @@
-# Nothing to ignore, yet...
+# we aim to always build into folders with the following names:
+obj32/
+obj64/
