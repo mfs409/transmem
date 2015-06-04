@@ -4,7 +4,7 @@
 #
 
 #
-# Let the user choose 32-bit or 64-bit compilation, but default to 32
+# Let the user choose 32-bit or 64-bit compilation
 #
 BITS ?= 32
 
@@ -18,7 +18,7 @@ output_folder := $(shell mkdir -p $(ODIR))
 # Tools
 #
 CXX = g++
-LD = g++
+LD  = g++
 
 #
 # Names of files that the compiler generates
@@ -28,13 +28,35 @@ OFILES   = $(patsubst %, $(ODIR)/%.o, $(SRCS) $(LIBSRCS))
 DEPS     = $(patsubst %, $(ODIR)/%.d, $(SRCS) $(LIBSRCS))
 
 #
+# These lines tell where to find a transactional STL.  We do our best to
+# figure it out automatically, but assume there's a very new GCC in the path,
+# and that it was used to build the STL
+#
+GCC_HOME    := $(shell which gcc | sed 's+/bin/gcc++')
+TM_STL_HOME := ../../../libs/libstdc++_tm
+TM_STL_PATH := $(shell cd $(TM_STL_HOME); pwd)
+
+#
 # Flags
 #
 # NB: we must += these, since the parent Makefile might have put in some
 # custom flags.
 #
 CXXFLAGS += -I../lib -I../ -Wall -Wextra -g -fgnu-tm -O2 -std=c++11 -MMD -m$(BITS)
-LDFLAGS  += -lpthread -litm -m$(BITS)
+LDFLAGS  += -lpthread -litm -m$(BITS) -fgnu-tm
+
+#
+# Flags for transactional STL
+#
+CXXFLAGS      += -nostdinc -I/usr/include/ -m$(BITS) -fgnu-tm
+CXXFLAGS      += -I$(TM_STL_PATH)/libstdc++-v3/include
+CXXFLAGS      += -I$(TM_STL_PATH)/libstdc++-v3/include/x86_64-unknown-linux-gnu
+CXXFLAGS      += -I$(TM_STL_PATH)/libstdc++-v3/libsupc++
+CXXFLAGS      += -I$(GCC_HOME)/lib/gcc/x86_64-unknown-linux-gnu/6.0.0/include
+
+LDFLAGS       += -L$(TM_STL_PATH)/libstdc++-v3/src/obj$(BITS)
+LDFLAGS       += -Wl,-rpath,$(TM_STL_PATH)/libstdc++-v3/src/obj$(BITS)
+LDFLAGS       += -lstdc++
 
 #
 # Target Info
@@ -46,6 +68,7 @@ LDFLAGS  += -lpthread -litm -m$(BITS)
 #
 # Targets
 #
+
 all: $(EXEFILES)
 
 clean:

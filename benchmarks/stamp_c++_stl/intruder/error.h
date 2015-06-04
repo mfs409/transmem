@@ -1,0 +1,17 @@
+/*
+ * PLEASE SEE LICENSE FILE FOR LICENSING AND COPYRIGHT INFORMATION
+ */
+
+#pragma once
+
+enum int_error_t {
+    ERROR_NONE        = 0,
+    ERROR_SHORT       = 1,
+    ERROR_FLOWID      = 2,
+    ERROR_FRAGMENTID  = 3,
+    ERROR_LENGTH      = 4,
+    ERROR_NUMFRAGMENT = 5,
+    ERROR_INCOMPLETE  = 6,
+    ERROR_SIGNATURE   = 7,
+    NUM_ERROR
+};
