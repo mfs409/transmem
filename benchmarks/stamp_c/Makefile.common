@@ -1,0 +1,74 @@
+#
+# Note: this should be included at the end of a benchmark-specific Makefile.
+# Otherwise, $(PROG), $(SRCS), and $(LIBSRCS) won't be defined.
+#
+
+#
+# Let the user choose 32-bit or 64-bit compilation, but default to 32
+#
+BITS ?= 32
+
+#
+# Set up the output directory
+#
+ODIR          := ../obj$(BITS)/$(PROG)
+output_folder := $(shell mkdir -p $(ODIR))
+
+#
+# Tools
+#
+CC = gcc
+LD = gcc
+
+#
+# Names of files that the compiler generates
+#
+EXEFILES = $(ODIR)/$(PROG)
+OFILES   = $(patsubst %, $(ODIR)/%.o, $(SRCS) $(LIBSRCS))
+DEPS     = $(patsubst %, $(ODIR)/%.d, $(SRCS) $(LIBSRCS))
+
+#
+# Flags
+#
+# NB: we must += these, since the parent Makefile might have put in some
+# custom flags.
+#
+CFLAGS  += -I../lib -I../ -Wall -Wextra -g -fgnu-tm -O2 -MMD -m$(BITS)
+LDFLAGS += -lpthread -litm -m$(BITS)
+
+#
+# Target Info
+#
+.DEFAULT_GOAL = all
+.PRECIOUS: $(OFILES)
+.PHONY: all clean
+
+#
+# Targets
+#
+all: $(EXEFILES)
+
+clean:
+	rm -rf $(ODIR)
+
+#
+# Rules for building .o files from sources
+#
+
+$(ODIR)/%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(ODIR)/%.o: ../lib/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+#
+# Rules for building executables
+#
+
+$(EXEFILES): $(OFILES)
+	$(LD) $^ $(LDFLAGS) -o $@
+
+#
+# Include dependencies
+#
+-include $(DEPS)
