@@ -56,8 +56,8 @@ CXXFLAGS_NOTM  = -MD -O2 -ggdb -m$(BITS) -std=c++14 -nostdinc -nostdinc++       
                  -I$(GCC_HOME)/lib/gcc/x86_64-unknown-linux-gnu/6.0.0/include      \
                  -DNO_TM -pthread
 
-CXXFLAGS_TRACE = -MD -O2 -ggdb -m$(BITS) -std=c++14 -nostdinc --nostdinc++         \
-                 -include ../../libstdc++_trace/trace.h                            \
+CXXFLAGS_TRACE = -MD -O2 -ggdb -m$(BITS) -std=c++14 -nostdinc -nostdinc++          \
+                 -include $(TRACE_STL_HOME)/trace.h                                \
                  -I/usr/include/ -I$(TRACE_STL_HOME)/libstdc++-v3/include          \
                  -I$(TRACE_STL_HOME)/libstdc++-v3/include/x86_64-unknown-linux-gnu \
                  -I$(TRACE_STL_HOME)/libstdc++-v3/libsupc++                        \
