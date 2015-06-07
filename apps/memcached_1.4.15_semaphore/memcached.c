@@ -238,7 +238,9 @@ char *tm_strncpy_to_local(char *local_dst, const char *src, size_t n)
     // keep track of the size, and have a local destination so that gcc
     // doesn't do transactional writes, only transactional reads
     int size = n;
-    char dst[MAX(KEY_MAX_LENGTH + 1, STAT_VAL_LEN) + 1];
+    // NB: Alex Matveev reports that this needs to be larger, and suggests 10000
+    // char dst[MAX(KEY_MAX_LENGTH + 1, STAT_VAL_LEN) + 1];
+    char dst[10000];
 
     if (n != 0) {
         char *d = dst;
