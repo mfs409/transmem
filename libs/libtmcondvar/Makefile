@@ -24,9 +24,9 @@ output_folder32 := $(shell mkdir -p $(ODIR32))
 output_folder64 := $(shell mkdir -p $(ODIR64))
 
 #
-# For now, libtmcondvar only requires condvar.cpp
+# For now, all code is in tmcondvar.cc
 #
-CXXFILES   = condvar
+CXXFILES   = tmcondvar
 LIBFILES32 = $(ODIR32)/libtmcondvar.a
 LIBFILES64 = $(ODIR64)/libtmcondvar.a
 
@@ -55,11 +55,11 @@ clean:
 #
 # Build rules
 #
-$(ODIR32)/%.o:%.cpp
+$(ODIR32)/%.o:%.cc
 	@echo [CXX] $< "-->" $@
 	@$(CXX) -m32 $(CXXFLAGS) -c -o $@ $<
 
-$(ODIR64)/%.o:%.cpp
+$(ODIR64)/%.o:%.cc
 	@echo [CXX] $< "-->" $@
 	@$(CXX) -m64 $(CXXFLAGS) -c -o $@ $<
 
