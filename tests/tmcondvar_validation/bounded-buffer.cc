@@ -1,6 +1,3 @@
-// TODO: make sure this is clean, and commented, and then go back to
-// memcached and handle it, using the new C interface.
-
 #include <atomic>
 #include <string>
 #include <set>
