@@ -1,0 +1,6 @@
+log/
+inst/
+obj/
+pkgs/libs
+pkgs/tools
+inputs/

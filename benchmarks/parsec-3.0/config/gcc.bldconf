@@ -40,7 +40,10 @@ case "${OSTYPE}" in
   # Linux + default case
 
   # CC_HOME is installation root of the C compiler
-  export CC_HOME="/usr"
+  # [transmem] Most people don't install experimental compilers in /usr, so
+  #            we instead use the location of whatever gcc is in the user's
+  #            path
+  export CC_HOME=`which gcc | sed 's|/bin/gcc||'`
   # BINUTIL_HOME is installation root of the GNU binutils
   export BINUTIL_HOME="/usr"
   # GNUTOOL_HOME is installation root of the GNU tools
