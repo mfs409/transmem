@@ -17,8 +17,13 @@
 
 #include "Thread.h"
 #include "ThreadGroup.h"
+// [transmem] In TM mode, use TM and tmcondvars instead of Mutex and Condition
+#ifdef ENABLE_TM
+#include <tmcondvar.h>
+#else
 #include "Mutex.h"
 #include "Condition.h"
+#endif
 #include "Barrier.h"
 
 
@@ -64,8 +69,13 @@ class WorkerGroup: protected ThreadGroup, protected Runnable {
 
     std::vector<Threadable *> cmds;
     thread_internal_cmd_t cmd;
+    // [transmem] In TM mode, use a tmcondvar instead of a mutex and condvar
+#ifdef ENABLE_TM
+    tmcondvar_t* tmWorkAvailable;                   //condition to wait on for work
+#else
     threads::Mutex workDispatch;                    //mutex controlling work dispatch
     threads::Condition workAvailable;               //condition to wait on for work
+#endif
     threads::Barrier *workDoneBarrier;              //barrier to wait on for results
     threads::Barrier *poolReadyBarrier;             //work done, reset completed
 

@@ -26,18 +26,35 @@
 
 namespace threads{
 
+// [transmem] in TM mode, ctor must initialize the workAvailable condvar differently
+#ifdef ENABLE_TM
+//constructor
+WorkerGroup::WorkerGroup(int nThreads) : cmd(THREADS_IDLE) {
+  tmWorkAvailable = tmcondvar_create();
+  if(nThreads < 1) {
+    WorkerGroupException e;
+    throw e;
+  }
+
+  workDoneBarrier = new threads::Barrier(nThreads);
+  poolReadyBarrier = new threads::Barrier(nThreads + 1);
+
+  ThreadGroup::CreateThreads(nThreads, *this);
+}
+#else
 //constructor
 WorkerGroup::WorkerGroup(int nThreads) : cmd(THREADS_IDLE), workAvailable(workDispatch) {
   if(nThreads < 1) {
     WorkerGroupException e;
     throw e;
   }
-  
+
   workDoneBarrier = new threads::Barrier(nThreads);
   poolReadyBarrier = new threads::Barrier(nThreads + 1);
-  
+
   ThreadGroup::CreateThreads(nThreads, *this);
 }
+#endif
 
 //destructor
 WorkerGroup::~WorkerGroup() {
@@ -68,11 +85,20 @@ void WorkerGroup::RegisterCmd(thread_cmd_t _cmd, Threadable &obj) {
 
 //Send an internal command to all worker threads
 void WorkerGroup::SendInternalCmd(thread_internal_cmd_t _cmd) {
+  // [transmem] use transactions and tmcondvars instead of locks and condvars
+#ifdef ENABLE_TM
+  __transaction_atomic {
+    //send command
+    cmd = _cmd;
+    tmcondvar_broadcast(tmWorkAvailable);
+  }
+#else
   workDispatch.Lock();
   //send command
   cmd = _cmd;
   workAvailable.NotifyAll();
   workDispatch.Unlock();
+#endif
 
   //wait until all work is done and pool is ready
   poolReadyBarrier->Wait();
@@ -96,11 +122,29 @@ void WorkerGroup::SendCmd(thread_cmd_t _cmd) {
 WorkerGroup::thread_internal_cmd_t WorkerGroup::RecvCmd() {
   thread_internal_cmd_t _cmd;
 
+  // [transmem] use TM instead of locks... note that we need to take care
+  //            that the wait() is the last operation in the transaction
+#ifdef ENABLE_TM
+  bool done = false;
+  while (!done) {
+    __transaction_atomic {
+      //wait until work has been assigned
+      if(cmd == THREADS_IDLE) {
+        tmcondvar_wait(tmWorkAvailable);
+      }
+      else {
+        _cmd = cmd;
+        done = true;
+      }
+    }
+  }
+#else
   workDispatch.Lock();
   //wait until work has been assigned
   while(cmd == THREADS_IDLE) workAvailable.Wait();
   _cmd = cmd;
   workDispatch.Unlock();
+#endif
 
   return _cmd;
 }
@@ -111,14 +155,21 @@ void WorkerGroup::AckCmd() {
 
   master = workDoneBarrier->Wait();
   if(master) {
+    // [transmem] use TM instead of lock
+#ifdef ENABLE_TM
+    __transaction_atomic {
+      cmd = THREADS_IDLE;
+    }
+#else
     workDispatch.Lock();
     cmd = THREADS_IDLE;
     workDispatch.Unlock();
+#endif
   }
   poolReadyBarrier->Wait();
 }
 
-//thread entry function	
+//thread entry function
 void WorkerGroup::Run() {
   bool doExit = false;
   static thread_rank_t counter = 0;
@@ -126,11 +177,19 @@ void WorkerGroup::Run() {
   thread_internal_cmd_t cmd;
 
   //determine rank of this thread
+  // [transmem] use TM instead of a lock
+#ifdef ENABLE_TM
+  __transaction_atomic {
+    rank = counter;
+    counter++;
+  }
+#else
   workDispatch.Lock();
   rank = counter;
   counter++;
   workDispatch.Unlock();
-  
+#endif
+
   //worker thread main loop
   while(!doExit) {
     //wait until work has been assigned

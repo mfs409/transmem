@@ -13,13 +13,18 @@
 # include "config.h"
 #endif
 
-#pragma warning( disable : 4290)		//disable Microsoft compiler exception warning
+#pragma warning( disable : 4290)    //disable Microsoft compiler exception warning
 
 #if defined(HAVE_LIBPTHREAD)
 # include <pthread.h>
 #else
-# include "Mutex.h"
-# include "Condition.h"
+// [transmem] need to include tmcondvars
+# ifdef ENABLE_TM
+#  include <tmcondvar.h>
+# else
+#  include "Mutex.h"
+#  include "Condition.h"
+# endif
 #endif //HAVE_LIBPTHREAD
 
 #include <exception>
@@ -72,9 +77,15 @@ class Barrier {
 #if defined(HAVE_LIBPTHREAD)
     pthread_barrier_t b;
 #else
+    // [transmem] use tmcondvars, no locks
+#ifdef ENABLE_TM
+    tmcondvar_t* tmCSleep;
+    tmcondvar_t* tmCReset;
+#else
     Mutex *M;
     Condition *CSleep;
     Condition *CReset;
+#endif
     int countSleep;
     int countReset;
 #endif //HAVE_LIBPTHREAD

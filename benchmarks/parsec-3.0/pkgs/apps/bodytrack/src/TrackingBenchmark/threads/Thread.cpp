@@ -12,6 +12,10 @@
 
 #if defined(HAVE_LIBPTHREAD)
 # include <pthread.h>
+// [transmem] we also need to include tmcondvars if we're in TM mode
+# ifdef ENABLE_TM
+#  include <tmcondvar.h>
+# endif
 #else //default: winthreads
 # include <windows.h>
 # include <process.h>
@@ -30,6 +34,11 @@ namespace threads {
 // we make use of a helper function which will wrap the member function.
 extern "C" {
   static void *thread_entry(void *arg) {
+    // [transmem] we need to initialize each thread's condvar context when
+    //            the thread is created
+#ifdef ENABLE_TM
+    tmcondvar_thread_init();
+#endif
     Runnable *tobj = static_cast<Runnable *>(arg);
     tobj->Run();
 
@@ -41,7 +50,7 @@ extern "C" {
   unsigned __stdcall thread_entry(void *arg) {
     Runnable *tobj = static_cast<Runnable *>(arg);
     tobj->Run();
-	return NULL;
+    return NULL;
   }
 }
 #endif //HAVE_LIBPTHREAD
