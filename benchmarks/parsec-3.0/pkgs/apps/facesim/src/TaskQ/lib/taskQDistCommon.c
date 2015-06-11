@@ -14,10 +14,22 @@ int _M4_threadsTableAllocated[MAX_THREADS];
 pthread_mutexattr_t _M4_normalMutexAttr;
 #endif //ENABLE_PTHREADS
 
+// [transmem] include tmcondvar support
+#ifdef ENABLE_TM
+# include <tmcondvar.h>
+#endif
+
 #include "taskQInternal.h"
 #include "taskQList.h"
 
+// [transmem] can't access volatiles from inside of transactions... rename to
+//            be sure we don't accidentally access nontransactionally.
+#ifdef ENABLE_TM
+static long                   tmNumThreads;
+static volatile long          numTaskQs, threadsPerTaskQ, maxTasks;
+#else
 static volatile long          numThreads, numTaskQs, threadsPerTaskQ, maxTasks;
+#endif
 static volatile int           nextQ = 0;  // Just a hint. Not protected by locks.
 static volatile int           parallelRegion = 0;
 static volatile int           noMoreTasks = 0;
@@ -34,7 +46,10 @@ static volatile int           noMoreTasks = 0;
 
 typedef struct {
 #ifdef ENABLE_PTHREADS
+  // [transmem] no lock when we're using TM
+# ifndef ENABLE_TM
     pthread_mutex_t lock;
+# endif
 #endif //ENABLE_PTHREADS
     long                   statEnqueued, statLocal, *statStolen;
     char                   padding1[CACHE_LINE_SIZE];
@@ -44,9 +59,15 @@ typedef struct {
 
 typedef struct {
 #ifdef ENABLE_PTHREADS
+  // [transmem] no lock, and tmcondvars, when in TM mode
+# ifdef ENABLE_TM
+  tmcondvar_t* tmTaskAvail;
+  tmcondvar_t* tmTasksDone;
+# else
     pthread_mutex_t lock;
     pthread_cond_t taskAvail;
     pthread_cond_t tasksDone;
+# endif
 #endif //ENABLE_PTHREADS
     volatile long         threadCount;
 } Sync;
@@ -73,11 +94,21 @@ static inline int calculateNumSteal( int available) {
 static void waitForTasks( void) {
     TRACE;
 #ifdef ENABLE_PTHREADS
+    // [transmem] use TM, not locks
+#ifdef ENABLE_TM
+    __transaction_atomic {
+      sync.threadCount++;
+      if ( sync.threadCount == tmNumThreads)
+        tmcondvar_broadcast(sync.tmTasksDone);;
+      tmcondvar_wait(sync.tmTaskAvail);
+    }
+#else
     pthread_mutex_lock(&(sync.lock));;
     sync.threadCount++;
     if ( sync.threadCount == numThreads)
         pthread_cond_broadcast(&sync.tasksDone);;
     pthread_cond_wait(&sync.taskAvail,&sync.lock);  pthread_mutex_unlock(&sync.lock);;
+#endif
 #else
     sync.threadCount++;
 #endif //ENABLE_PTHREADS
@@ -88,11 +119,20 @@ static void signalTasks( void) {
     TRACE;
     if ( sync.threadCount == 0)    return;    // Unsafe
 #ifdef ENABLE_PTHREADS
+    // [transmem] use locks instead of TM
+#ifdef ENABLE_TM
+    __transaction_atomic {
+      sync.threadCount = 0;
+      tmcondvar_broadcast(sync.tmTaskAvail);;
+      tmcondvar_broadcast(sync.tmTasksDone);;
+    }
+#else
     pthread_mutex_lock(&(sync.lock));;
     sync.threadCount = 0;
     pthread_cond_broadcast(&sync.taskAvail);;
     pthread_cond_broadcast(&sync.tasksDone);;
-    pthread_mutex_unlock(&(sync.lock));;    
+    pthread_mutex_unlock(&(sync.lock));;
+#endif
 #else
     sync.threadCount = 0;
 #endif //ENABLE_PTHREADS
@@ -103,12 +143,37 @@ static int waitForEnd( void) {
     int done;
     TRACE;
 #ifdef ENABLE_PTHREADS
+    // [transmem] use TM.  Control flow is a bit icky here, since it's an
+    //            if() instead of a while() inside the critical section.
+#ifdef ENABLE_TM
+    int mode = 1;
+    while (mode != 0) {
+      __transaction_atomic {
+        if (mode == 1) {
+          sync.threadCount++;
+          if ( sync.threadCount != tmNumThreads) {
+            tmcondvar_wait(sync.tmTasksDone);;
+            mode = 2;
+          }
+          else {
+            done = (sync.threadCount == tmNumThreads);
+            mode = 0;
+          }
+        }
+        else {
+          done = (sync.threadCount == tmNumThreads);
+          mode = 0;
+        }
+      }
+    }
+#else
     pthread_mutex_lock(&(sync.lock));;
     sync.threadCount++;
     if ( sync.threadCount != numThreads)
         pthread_cond_wait(&sync.tasksDone,&sync.lock);;
     done = (sync.threadCount == numThreads);
     pthread_mutex_unlock(&(sync.lock));;
+#endif
 #else
     sync.threadCount++;
     done = (sync.threadCount == numThreads);
@@ -144,9 +209,16 @@ static int stealTasks( long myThreadId, long myQ) {
         if( stolen) {
             IF_STATS(  {
 #ifdef ENABLE_PTHREADS
+// [transmem] use TM
+#ifdef ENABLE_TM
+                __transaction_atomic {
+                  taskQs[myQ].statStolen[i] += stolen;
+                }
+#else
                 pthread_mutex_lock(&(taskQs[myQ].lock));;
                 taskQs[myQ].statStolen[i] += stolen;
                 pthread_mutex_unlock(&(taskQs[myQ].lock));;
+#endif
 #else
                 taskQs[myQ].statStolen[i] += stolen;
 #endif //ENABLE_PTHREADS
@@ -161,6 +233,10 @@ static int stealTasks( long myThreadId, long myQ) {
 }
 
 static void *taskQIdleLoop( void *arg) {
+  // [transmem] configure the thread's condvar context
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
     long index = ( long)arg;
     long myQ = index / threadsPerTaskQ;
     int i = 0;
@@ -184,7 +260,7 @@ static void *taskQIdleLoop( void *arg) {
 void taskQInit( int numOfThreads, int maxNumOfTasks) {
     int i;
 
-#ifdef ENABLE_PTHREADS    
+#ifdef ENABLE_PTHREADS
     ALAMERE_INIT(numOfThreads);
     ALAMERE_AFTER_CHECKPOINT();
     pthread_mutexattr_init( &_M4_normalMutexAttr);
@@ -199,14 +275,23 @@ void taskQInit( int numOfThreads, int maxNumOfTasks) {
 ;
 
     maxTasks = maxNumOfTasks;
+    // [transmem] tmNumThreads isn't volatile... to be safe, always use a transaction
+#ifdef ENABLE_TM
+    __transaction_atomic { tmNumThreads = numOfThreads; }
+#else
     numThreads = numOfThreads;
+#endif
     threadsPerTaskQ = taskQGetParam( TaskQThreadsPerQueue);
+    // [transmem] skip assertion when TM is on, instead of dealing with
+    //            assertions that read transactional variables.
+#ifndef ENABLE_TM
     DEBUG_ASSERT( ( numThreads >= 1) && ( threadsPerTaskQ >= 1));
+#endif
 
     numTaskQs = (numOfThreads+threadsPerTaskQ-1)/threadsPerTaskQ;
 
     /*
-    printf( "\n\n\t#####  Running TaskQ version Distributed %-15s with %ld threads and %ld queues  #####\n", 
+    printf( "\n\n\t#####  Running TaskQ version Distributed %-15s with %ld threads and %ld queues  #####\n",
             VERSION,  numThreads, numTaskQs);
     printf( "\t##### \t\t\t\t\t\t[ built on %s at %s ]  #####\n\n", __DATE__, __TIME__);
     printf( "\t\t TaskQ mutex address                 :  %ld\n", ( long)&sync.lock);
@@ -219,7 +304,10 @@ void taskQInit( int numOfThreads, int maxNumOfTasks) {
     taskQs = ( TaskQ *)malloc( sizeof( TaskQ) * numTaskQs);
     for ( i = 0; i < numTaskQs; i++) {
 #ifdef ENABLE_PTHREADS
+      // [transmem] no lock to configure
+#ifndef ENABLE_TM
         pthread_mutex_init(&(taskQs[i].lock), NULL);;
+#endif
 #endif //ENABLE_PTHREADS
         taskQs[i].statStolen = ( long *)malloc( sizeof(long) * numTaskQs);
 
@@ -228,13 +316,24 @@ void taskQInit( int numOfThreads, int maxNumOfTasks) {
     taskQResetStats();
 
 #ifdef ENABLE_PTHREADS
+    // [transmem] TM initialization instead of pthread
+#ifdef ENABLE_TM
+    sync.tmTaskAvail = tmcondvar_create();
+    sync.tmTasksDone = tmcondvar_create();
+#else
     pthread_mutex_init(&(sync.lock), NULL);;
     pthread_cond_init(&sync.taskAvail,NULL);;
     pthread_cond_init(&sync.tasksDone,NULL);;
+#endif
 #endif //ENABLE_PTHREADS
     sync.threadCount = 0;
 
 #ifdef ENABLE_PTHREADS
+    // [transmem] Must read tmNumThreads in a transaction, since it's not volatile
+#ifdef ENABLE_TM
+    long numThreads = 0;
+    __transaction_atomic { numThreads = tmNumThreads; }
+#endif
     for ( i = 1; i < numThreads; i++)
     {
         int _M4_i;
@@ -259,10 +358,10 @@ static inline int pickQueue( int threadId) { // Needs work
     return q;
 }
 
-void taskQEnqueueGrid( TaskQTask taskFunction, TaskQThreadId threadId, long numOfDimensions, 
-                       long dimensionSize[MAX_DIMENSION], long tileSize[MAX_DIMENSION]) { 
+void taskQEnqueueGrid( TaskQTask taskFunction, TaskQThreadId threadId, long numOfDimensions,
+                       long dimensionSize[MAX_DIMENSION], long tileSize[MAX_DIMENSION]) {
     taskQEnqueueGridSpecialized( ( TaskQTask3)taskFunction, threadId, numOfDimensions, tileSize);
-    enqueueGridHelper( assignTasks, ( TaskQTask3)taskFunction, numOfDimensions, numTaskQs, dimensionSize, tileSize); 
+    enqueueGridHelper( assignTasks, ( TaskQTask3)taskFunction, numOfDimensions, numTaskQs, dimensionSize, tileSize);
     if ( parallelRegion)    signalTasks();
 }
 

@@ -8,7 +8,12 @@ static inline int getATaskFromHead( TaskQ *t, void *task[NUM_FIELDS]) {
     int found;
 
 #ifdef ENABLE_PTHREADS
+    // [transmem] use TM
+#ifdef ENABLE_TM
+    __transaction_atomic {
+#else
     pthread_mutex_lock(&(t->lock));;
+#endif
 #endif //ENABLE_PTHREADS
     found = shared->count;
     if ( found) {
@@ -16,7 +21,12 @@ static inline int getATaskFromHead( TaskQ *t, void *task[NUM_FIELDS]) {
         getEntryHead( shared, task);
     }
 #ifdef ENABLE_PTHREADS
+    // [transmem] complete the transaction
+#ifdef ENABLE_TM
+    }
+#else
     pthread_mutex_unlock(&(t->lock));;
+#endif
 #endif //ENABLE_PTHREADS
     return found;
 }
@@ -28,21 +38,34 @@ static inline int stealTasksSpecialized( TaskQ *myT, TaskQ *srcT) {
 
     TaskQList *myShared =  ( TaskQList *)&myT->q.shared;
 
+    // [transmem] hoisted toSteal definition out of transaction, so we can
+    //            return it cleanly.
+    int toSteal = 0;
 #ifdef ENABLE_PTHREADS
+    // [transmem] TM is simpler here, since we don't have to worry about lock
+    //            order
+#ifdef ENABLE_TM
+    __transaction_atomic {
+#else
     // Grab to locks in a total order to avoid deadlock
-    if ( ( long)myT < ( long)srcT)   { pthread_mutex_lock(&(myT->lock));;  pthread_mutex_lock(&(srcT->lock));; } 
+    if ( ( long)myT < ( long)srcT)   { pthread_mutex_lock(&(myT->lock));;  pthread_mutex_lock(&(srcT->lock));; }
     else                             { pthread_mutex_lock(&(srcT->lock));; pthread_mutex_lock(&(myT->lock));;  }
+#endif
 #endif //ENABLE_PTHREADS
 
-    int toSteal = 0;
     int found = ( int)*srcCount;
     if ( found) {
         toSteal = calculateNumSteal( found);
         moveEntriesFromTailToHead( srcShared, myShared, toSteal);
     }
 #ifdef ENABLE_PTHREADS
+    // [transmem] close the transaction
+#ifdef ENABLE_TM
+    }
+#else
     pthread_mutex_unlock(&(myT->lock));;
     pthread_mutex_unlock(&(srcT->lock));;
+#endif
 #endif //ENABLE_PTHREADS
 
     return toSteal;
@@ -72,16 +95,26 @@ static inline int getTasksFromTail( TaskQ *t, void *tasks[MAX_TASKS_TO_STEAL][NU
 static inline void taskQEnqueueTaskSpecialized( TaskQ *t, void *task[NUM_FIELDS]) {
     TaskQList *shared =  ( TaskQList *)&t->q.shared;
 #ifdef ENABLE_PTHREADS
+    // [transmem] use a transaction
+#ifdef ENABLE_TM
+    __transaction_atomic {
+#else
     pthread_mutex_lock(&(t->lock));;
+#endif
 #endif //ENABLE_PTHREADS
     putEntryHead( shared, task);
     IF_STATS( t->statEnqueued++);
 #ifdef ENABLE_PTHREADS
+    // [transmem] close the transaction
+#ifdef ENABLE_TM
+    }
+#else
     pthread_mutex_unlock(&(t->lock));;
+#endif
 #endif //ENABLE_PTHREADS
 }
 
-static inline void assignTasks( TaskQTask3 taskFn, int numDimensions, int queueNo, 
+static inline void assignTasks( TaskQTask3 taskFn, int numDimensions, int queueNo,
                                 long min[MAX_DIMENSION], long max[MAX_DIMENSION], long step[MAX_DIMENSION]) {
     TaskQ *t = &taskQs[queueNo];
     TaskQList *shared =  ( TaskQList *)&t->q.shared;
@@ -91,7 +124,12 @@ static inline void assignTasks( TaskQTask3 taskFn, int numDimensions, int queueN
     // for ( j = 0; j < numDimensions; j++) printf( "       %ld :: %4ld %4ld %4ld\n", j, min[j], max[j], step[j]);
 
 #ifdef ENABLE_PTHREADS
+    // [transmem] use a transaction
+#ifdef ENABLE_TM
+    __transaction_atomic {
+#else
     pthread_mutex_lock(&(t->lock));;
+#endif
 #endif //ENABLE_PTHREADS
     for ( i = min[0]; i < max[0]; i++)
         for ( j = min[1]; j < max[1]; j++)
@@ -104,14 +142,19 @@ static inline void assignTasks( TaskQTask3 taskFn, int numDimensions, int queueN
                 task[3] = ( void *)( k * step[2]);
                 // long m; for ( m = 0; m < NUM_FIELDS; m++) { printf( "%10ld", ( long)task[m]); } printf( "\n");
                 putEntryHead( shared, task);
-                
+
             }
 #ifdef ENABLE_PTHREADS
+    // [transmem] close the transaction
+#ifdef ENABLE_TM
+    }
+#else
     pthread_mutex_unlock(&(t->lock));;
+#endif
 #endif //ENABLE_PTHREADS
 }
 
-static inline void taskQEnqueueGridSpecialized( TaskQTask3 taskFunction, TaskQThreadId threadId, 
+static inline void taskQEnqueueGridSpecialized( TaskQTask3 taskFunction, TaskQThreadId threadId,
                                                 int numOfDimensions, long tileSize[MAX_DIMENSION]) {
     TQ_ASSERT( MAX_DIMENSION == 3); // assignTasks assumes this
     TQ_ASSERT( ( threadId == 0) && ( parallelRegion == 0)); // Since we are enqueuing tasks in other threads

@@ -6,6 +6,10 @@ ifdef version
 		CXXFLAGS+=-DENABLE_PTHREADS	
 	endif
 
+	ifeq "$(version)" "tm"
+		CXXFLAGS += -DENABLE_PTHREADS -DENABLE_TM
+	endif
+
 	ifeq "$(version)" "serial"
 		CXXFLAGS+=-DNEW_SERIAL_IMPLEMENTATIOM	
 	endif
