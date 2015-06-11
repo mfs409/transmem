@@ -32,3 +32,8 @@ tar xzvf parsec-3.0-input-native.tar.gz --strip=1 parsec-3.0/pkgs/
 
 # delete the tarball
 parsec-3.0-input-native.tar.gz
+
+# Lastly, create a few bldconf files that are needed for building the
+# libraries with our tm build configuration
+cp pkgs/libs/gsl/parsec/gcc-pthreads.bldconf pkgs/libs/gsl/parsec/gcc-tm.bldconf
+cp pkgs/libs/libjpeg/parsec/gcc-pthreads.bldconf pkgs/libs/libjpeg/parsec/gcc-tm.bldconf

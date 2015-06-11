@@ -70,6 +70,11 @@ ifdef version
     benchmark_base := ferret-pthreads
     LDLIBS += -lpthread
   endif
+  # [transmem] set up tm build
+  ifeq "$(version)" "tm"
+    benchmark_base := ferret-pthreads
+    LDLIBS += -lpthread
+  endif
   ifeq "$(version)" "tbb"
     benchmark_base := ferret-tbb
     LDLIBS += -ltbb -ltbbmalloc
