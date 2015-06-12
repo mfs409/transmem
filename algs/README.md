@@ -16,3 +16,10 @@ only differences are that some files have been removed, since they are not
 needed for x86/linux, and there is now a Makefile that produces 32-bit and
 64-bit versions of the library without requiring a full gcc source tree /
 build tree.
+
+### libitm_tsx
+
+This folder has a libitm implementation that only supports Intel TSX or
+serial mode with no undo logs.  It can't handle transaction_cancel, but it is
+streamlined.  It also has support for oncommit handlers, so that HTM can be
+used with tmcondvars.
