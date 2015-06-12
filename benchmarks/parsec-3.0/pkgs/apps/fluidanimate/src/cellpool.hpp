@@ -43,6 +43,10 @@ typedef struct {
 void cellpool_init(cellpool *pool, int particles);
 
 //Get a Cell structure from the memory pool
+// [transmem] Need this to be transaciton-safe
+#ifdef ENABLE_TM
+__attribute__((transaction_safe))
+#endif
 Cell *cellpool_getcell(cellpool *pool);
 
 //Return a Cell structure to the memory pool

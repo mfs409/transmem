@@ -14,6 +14,14 @@
 #include "cellpool.hpp"
 
 
+// [transmem] Need posix_memalign to be TM safe... since it's not, we're
+// going to employ a gross hack.  We'll say that posix_memalign is /pure/.
+// This means that posix_memalign won't be aligned, and if the transaction
+// aborts, the memory will leak.
+#ifdef ENABLE_TM
+__attribute__((transaction_pure))
+int posix_memalign(void **memptr, size_t alignment, size_t size);
+#endif
 
 /* *** REMINDER ***
  The following asserts were added to the serial program:
@@ -37,13 +45,20 @@
 //
 //The cells inside the block will be connected to a NULL-terminated linked list
 //with the cell at the lowest memory location being the first of its elements.
+// [transmem] This needs to be transaction-safe
+#ifdef ENABLE_TM
+__attribute__((transaction_safe))
+#endif
 static struct datablockhdr *cellpool_allocblock(int cells) {
   struct datablockhdr *block = NULL;
   struct Cell *temp1, *temp2;
   int i;
 
   //allocate a full block
+// [transmem] Elide assertions in TM mode
+#ifndef ENABLE_TM
   assert(cells > 0);
+#endif
 #if defined(WIN32)
   block = (struct datablockhdr *)_aligned_malloc(sizeof(struct datablockhdr) + cells * sizeof(struct Cell), CACHELINE_SIZE);
   assert(block);
@@ -51,7 +66,10 @@ static struct datablockhdr *cellpool_allocblock(int cells) {
   block = (struct datablockhdr *)memalign(CACHELINE_SIZE, sizeof(struct datablockhdr) + cells * sizeof(struct Cell));
 #else
   int rv = posix_memalign((void **)(&block), CACHELINE_SIZE, sizeof(struct datablockhdr) + cells * sizeof(struct Cell));
+// [transmem] Elide assertions in TM mode
+#ifndef ENABLE_TM
   assert(!rv);
+#endif
 #endif
 
   //initialize header and cells
@@ -60,7 +78,10 @@ static struct datablockhdr *cellpool_allocblock(int cells) {
   for(i=0; i<cells; i++) {
     //If all structures are correctly padded then all pointers should also be correctly aligned,
     //but let's verify that nevertheless because the padding might change.
+// [transmem] Elide assertions in TM mode
+#ifndef ENABLE_TM
     assert((uint64_t)(temp1) % sizeof(void *) == 0);
+#endif
     if(i != cells-1) {
       temp2 = temp1 + 1;
       temp1->next = temp2;
@@ -95,7 +116,10 @@ void cellpool_init(cellpool *pool, int particles) {
 Cell *cellpool_getcell(cellpool *pool) {
   struct Cell *temp;
 
+// [transmem] Elide assertions in TM mode
+#ifndef ENABLE_TM
   assert(pool != NULL);
+#endif
 
   //If no more cells available then allocate more
   if(pool->cells == NULL) {

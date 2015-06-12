@@ -73,7 +73,11 @@ struct Grid
 bool  *border;
 pthread_attr_t attr;
 pthread_t *thread;
+
+// [transmem] Don't need mutexes anymore
+#ifndef ENABLE_TM
 pthread_mutex_t **mutex;  // used to lock cells in RebuildGrid and also particles in other functions
+#endif
 pthread_barrier_t barrier;  // global barrier used by all threads
 #ifdef ENABLE_VISUALIZATION
 pthread_barrier_t visualization_barrier;  // global barrier to separate (serial) visualization phase from (parallel) fluid simulation
@@ -135,7 +139,7 @@ void InitSim(char const *fileName, unsigned int threadnum)
   grids = new struct Grid[NUM_GRIDS];
   assert(sizeof(Grid) <= CACHELINE_SIZE); // as we put and aligh grid on the cacheline size to avoid false-sharing
                                           // if asserts fails - increase pp union member in Grid declarationi
-                                          // and change this macro 
+                                          // and change this macro
   pools = new cellpool[NUM_GRIDS];
 
   //Load input particles
@@ -190,7 +194,7 @@ void InitSim(char const *fileName, unsigned int threadnum)
   assert(delta.x >= h && delta.y >= h && delta.z >= h);
 
   std::cout << "Grids steps over x, y, z: " << delta.x << " " << delta.y << " " << delta.z << std::endl;
-  
+
   assert(nx >= XDIVS && nz >= ZDIVS);
   int gi = 0;
   int sx, sz, ex, ez;
@@ -227,9 +231,9 @@ void InitSim(char const *fileName, unsigned int threadnum)
           int index = (iz*ny + iy)*nx + ix;
           border[index] = false;
           for(int dk = -1; dk <= 1; ++dk)
-	  {
+      {
             for(int dj = -1; dj <= 1; ++dj)
-	    {
+        {
               for(int di = -1; di <= 1; ++di)
               {
                 int ci = ix + di;
@@ -243,22 +247,24 @@ void InitSim(char const *fileName, unsigned int threadnum)
                 if( ci < grids[i].sx || ci >= grids[i].ex ||
                   cj < grids[i].sy || cj >= grids[i].ey ||
                   ck < grids[i].sz || ck >= grids[i].ez ) {
-                      
+
                     border[index] = true;
-		    break;
-		}
+            break;
+        }
               } // for(int di = -1; di <= 1; ++di)
-	      if(border[index])
-		break;
-	    } // for(int dj = -1; dj <= 1; ++dj)
-	    if(border[index])
-	       break;
+          if(border[index])
+        break;
+        } // for(int dj = -1; dj <= 1; ++dj)
+        if(border[index])
+           break;
            } // for(int dk = -1; dk <= 1; ++dk)
         }
 
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
+  // [transmem] no mutexes to initialize
+#ifndef ENABLE_TM
   mutex = new pthread_mutex_t *[numCells];
   for(int i = 0; i < numCells; ++i)
   {
@@ -268,6 +274,7 @@ void InitSim(char const *fileName, unsigned int threadnum)
     for(int j = 0; j < n; ++j)
       pthread_mutex_init(&mutex[i][j], NULL);
   }
+#endif
   pthread_barrier_init(&barrier, NULL, NUM_GRIDS);
 #ifdef ENABLE_VISUALIZATION
   //visualization barrier is used by all NUM_GRIDS worker threads and 1 master thread
@@ -284,7 +291,7 @@ void InitSim(char const *fileName, unsigned int threadnum)
   cnumPars = (int*)_aligned_malloc(sizeof(int) * numCells, CACHELINE_SIZE);
   cnumPars2 = (int*)_aligned_malloc(sizeof(int) * numCells, CACHELINE_SIZE);
   last_cells = (struct Cell **)_aligned_malloc(sizeof(struct Cell *) * numCells, CACHELINE_SIZE);
-  assert((cells!=NULL) && (cells2!=NULL) && (cnumPars!=NULL) && (cnumPars2!=NULL) && (last_cells!=NULL)); 
+  assert((cells!=NULL) && (cells2!=NULL) && (cnumPars!=NULL) && (cnumPars2!=NULL) && (last_cells!=NULL));
 #elif defined(SPARC_SOLARIS)
   cells = (Cell*)memalign(CACHELINE_SIZE, sizeof(struct Cell) * numCells);
   cells2 =  (Cell*)memalign(CACHELINE_SIZE, sizeof(struct Cell) * numCells);
@@ -305,8 +312,8 @@ void InitSim(char const *fileName, unsigned int threadnum)
   // we construct them here
   for(int i=0; i<numCells; ++i)
   {
-	  new (&cells[i]) Cell;
-	  new (&cells2[i]) Cell;
+      new (&cells[i]) Cell;
+      new (&cells2[i]) Cell;
   }
 
   memset(cnumPars, 0, numCells*sizeof(int));
@@ -373,12 +380,12 @@ void InitSim(char const *fileName, unsigned int threadnum)
     cell->v[np].y = vy;
     cell->v[np].z = vz;
 #ifdef ENABLE_VISUALIZATION
-	vMin.x = std::min(vMin.x, cell->v[np].x);
-	vMax.x = std::max(vMax.x, cell->v[np].x);
-	vMin.y = std::min(vMin.y, cell->v[np].y);
-	vMax.y = std::max(vMax.y, cell->v[np].y);
-	vMin.z = std::min(vMin.z, cell->v[np].z);
-	vMax.z = std::max(vMax.z, cell->v[np].z);
+    vMin.x = std::min(vMin.x, cell->v[np].x);
+    vMax.x = std::max(vMax.x, cell->v[np].x);
+    vMin.y = std::min(vMin.y, cell->v[np].y);
+    vMax.y = std::max(vMax.y, cell->v[np].y);
+    vMin.z = std::min(vMin.z, cell->v[np].z);
+    vMax.z = std::max(vMax.z, cell->v[np].z);
 #endif
     ++cnumPars[index];
   }
@@ -468,12 +475,12 @@ void CleanUpSim()
   for(int i=0; i< numCells; ++i)
   {
     Cell& cell = cells[i];
-	while(cell.next)
-	{
-		Cell *temp = cell.next;
-		cell.next = temp->next;
-		cellpool_returncell(&pools[0], temp);
-	}
+    while(cell.next)
+    {
+        Cell *temp = cell.next;
+        cell.next = temp->next;
+        cellpool_returncell(&pools[0], temp);
+    }
   }
   // now return cell pools
   //NOTE: Cells from cell pools can migrate to different pools during the parallel phase.
@@ -484,6 +491,8 @@ void CleanUpSim()
   for(int i=0; i<NUM_GRIDS; i++) cellpool_destroy(&pools[i]);
   pthread_attr_destroy(&attr);
 
+  // [transmem] No mutexes to destroy
+#ifndef ENABLE_TM
   for(int i = 0; i < numCells; ++i)
   {
     assert(CELL_MUTEX_ID < MUTEXES_PER_CELL);
@@ -493,6 +502,7 @@ void CleanUpSim()
     delete[] mutex[i];
   }
   delete[] mutex;
+#endif
   pthread_barrier_destroy(&barrier);
 #ifdef ENABLE_VISUALIZATION
   pthread_barrier_destroy(&visualization_barrier);
@@ -527,7 +537,7 @@ void ClearParticlesMT(int tid)
       {
         int index = (iz*ny + iy)*nx + ix;
         cnumPars[index] = 0;
-		cells[index].next = NULL;
+        cells[index].next = NULL;
         last_cells[index] = &cells[index];
       }
 }
@@ -563,12 +573,12 @@ void RebuildGridMT(int tid)
           if(cj < 0) cj = 0; else if(cj > (ny-1)) cj = ny-1;
           if(ck < 0) ck = 0; else if(ck > (nz-1)) ck = nz-1;
 #if 0
-		  assert(ci>=ix-1);
-		  assert(ci<=ix+1);
-		  assert(cj>=iy-1);
-		  assert(cj<=iy+1);
-		  assert(ck>=iz-1);
-		  assert(ck<=iz+1);
+          assert(ci>=ix-1);
+          assert(ci<=ix+1);
+          assert(cj>=iy-1);
+          assert(cj<=iy+1);
+          assert(ck>=iz-1);
+          assert(ck<=iz+1);
 #endif
 #ifdef ENABLE_CFL_CHECK
           //check that source cell is a neighbor of destination cell
@@ -599,6 +609,42 @@ void RebuildGridMT(int tid)
 
           int index = (ck*ny + cj)*nx + ci;
           // this assumes that particles cannot travel more than one grid cell per time step
+
+          // [transmem] Original code doesn't use lexically scoped critical
+          //            sections.  We could just do everything as a
+          //            transaction, but we'll try to mimic the
+          //            higher-performance approach.
+#ifdef ENABLE_TM
+          Cell *cell;
+          int np;
+
+          if(border[index]) {
+              __transaction_atomic {
+                  cell = last_cells[index];
+                  np = cnumPars[index];
+
+                  //add another cell structure if everything full
+                  if( (np % PARTICLES_PER_CELL == 0) && (cnumPars[index] != 0) ) {
+                      cell->next = cellpool_getcell(&pools[tid]);
+                      cell = cell->next;
+                      last_cells[index] = cell;
+                  }
+                  ++cnumPars[index];
+              }
+          }
+          else {
+              cell = last_cells[index];
+              np = cnumPars[index];
+
+              //add another cell structure if everything full
+              if( (np % PARTICLES_PER_CELL == 0) && (cnumPars[index] != 0) ) {
+                  cell->next = cellpool_getcell(&pools[tid]);
+                  cell = cell->next;
+                  last_cells[index] = cell;
+              }
+              ++cnumPars[index];
+          }
+#else
           if(border[index])
             pthread_mutex_lock(&mutex[index][CELL_MUTEX_ID]);
           Cell *cell = last_cells[index];
@@ -613,9 +659,10 @@ void RebuildGridMT(int tid)
           ++cnumPars[index];
           if(border[index])
             pthread_mutex_unlock(&mutex[index][CELL_MUTEX_ID]);
+#endif
 
           //copy source to destination particle
-          
+
           cell->p[np % PARTICLES_PER_CELL]  = cell2->p[j % PARTICLES_PER_CELL];
           cell->hv[np % PARTICLES_PER_CELL] = cell2->hv[j % PARTICLES_PER_CELL];
           cell->v[np % PARTICLES_PER_CELL]  = cell2->v[j % PARTICLES_PER_CELL];
@@ -647,7 +694,7 @@ int InitNeighCellList(int ci, int cj, int ck, int *neighCells)
   int my_index = (ck*ny + cj)*nx + ci;
   neighCells[numNeighCells] = my_index;
   ++numNeighCells;
- 
+
   for(int di = -1; di <= 1; ++di)
     for(int dj = -1; dj <= 1; ++dj)
       for(int dk = -1; dk <= 1; ++dk)
@@ -729,18 +776,32 @@ void ComputeDensitiesMT(int tid)
 
                   if(border[index])
                   {
+// [transmem] Use tm instead of locks
+#ifdef ENABLE_TM
+                    __transaction_atomic {
+                    cell->density[ipar % PARTICLES_PER_CELL] += tc;
+                    }
+#else
                     pthread_mutex_lock(&mutex[index][ipar % MUTEXES_PER_CELL]);
                     cell->density[ipar % PARTICLES_PER_CELL] += tc;
                     pthread_mutex_unlock(&mutex[index][ipar % MUTEXES_PER_CELL]);
+#endif
                   }
                   else
                     cell->density[ipar % PARTICLES_PER_CELL] += tc;
 
                   if(border[indexNeigh])
                   {
+// [transmem] Use tm instead of locks
+#ifdef ENABLE_TM
+                    __transaction_atomic {
+                    neigh->density[iparNeigh % PARTICLES_PER_CELL] += tc;
+                    }
+#else
                     pthread_mutex_lock(&mutex[indexNeigh][iparNeigh % MUTEXES_PER_CELL]);
                     neigh->density[iparNeigh % PARTICLES_PER_CELL] += tc;
                     pthread_mutex_unlock(&mutex[indexNeigh][iparNeigh % MUTEXES_PER_CELL]);
+#endif
                   }
                   else
                     neigh->density[iparNeigh % PARTICLES_PER_CELL] += tc;
@@ -831,18 +892,32 @@ void ComputeForcesMT(int tid)
 
                   if( border[index])
                   {
+// [transmem] Use tm instead of locks
+#ifdef ENABLE_TM
+                    __transaction_atomic {
+                    cell->a[ipar % PARTICLES_PER_CELL] += acc;
+                    }
+#else
                     pthread_mutex_lock(&mutex[index][ipar % MUTEXES_PER_CELL]);
                     cell->a[ipar % PARTICLES_PER_CELL] += acc;
                     pthread_mutex_unlock(&mutex[index][ipar % MUTEXES_PER_CELL]);
+#endif
                   }
                   else
                     cell->a[ipar % PARTICLES_PER_CELL] += acc;
 
                   if( border[indexNeigh])
                   {
+// [transmem] Use tm instead of locks
+#ifdef ENABLE_TM
+                    __transaction_atomic {
+                    neigh->a[iparNeigh % PARTICLES_PER_CELL] -= acc;
+                    }
+#else
                     pthread_mutex_lock(&mutex[indexNeigh][iparNeigh % MUTEXES_PER_CELL]);
                     neigh->a[iparNeigh % PARTICLES_PER_CELL] -= acc;
                     pthread_mutex_unlock(&mutex[indexNeigh][iparNeigh % MUTEXES_PER_CELL]);
+#endif
                   }
                   else
                     neigh->a[iparNeigh % PARTICLES_PER_CELL] -= acc;
@@ -921,62 +996,62 @@ void ProcessCollisionsMT(int tid)
   for(int iz = grids[tid].sz; iz < grids[tid].ez; ++iz)
   {
     for(int iy = grids[tid].sy; iy < grids[tid].ey; ++iy)
-	{
+    {
       for(int ix = grids[tid].sx; ix < grids[tid].ex; ++ix)
       {
-	    if(!((ix==0)||(iy==0)||(iz==0)||(ix==(nx-1))||(iy==(ny-1))==(iz==(nz-1))))
-			continue;	// not on domain wall
+        if(!((ix==0)||(iy==0)||(iz==0)||(ix==(nx-1))||(iy==(ny-1))==(iz==(nz-1))))
+            continue;   // not on domain wall
         int index = (iz*ny + iy)*nx + ix;
         Cell *cell = &cells[index];
         int np = cnumPars[index];
         for(int j = 0; j < np; ++j)
         {
-		  int ji = j % PARTICLES_PER_CELL;
+          int ji = j % PARTICLES_PER_CELL;
           Vec3 pos = cell->p[ji] + cell->hv[ji] * timeStep;
 
-		  if(ix==0)
-		  {
+          if(ix==0)
+          {
             fptype diff = parSize - (pos.x - domainMin.x);
-		    if(diff > epsilon)
+            if(diff > epsilon)
               cell->a[ji].x += stiffnessCollisions*diff - damping*cell->v[ji].x;
-		  }
-		  if(ix==(nx-1))
-		  {
+          }
+          if(ix==(nx-1))
+          {
             fptype diff = parSize - (domainMax.x - pos.x);
             if(diff > epsilon)
               cell->a[ji].x -= stiffnessCollisions*diff + damping*cell->v[ji].x;
-		  }
-		  if(iy==0)
-		  {
+          }
+          if(iy==0)
+          {
             fptype diff = parSize - (pos.y - domainMin.y);
             if(diff > epsilon)
               cell->a[ji].y += stiffnessCollisions*diff - damping*cell->v[ji].y;
-		  }
-		  if(iy==(ny-1))
-		  {
+          }
+          if(iy==(ny-1))
+          {
             fptype diff = parSize - (domainMax.y - pos.y);
             if(diff > epsilon)
               cell->a[ji].y -= stiffnessCollisions*diff + damping*cell->v[ji].y;
-		  }
-		  if(iz==0)
-		  {
+          }
+          if(iz==0)
+          {
             fptype diff = parSize - (pos.z - domainMin.z);
             if(diff > epsilon)
               cell->a[ji].z += stiffnessCollisions*diff - damping*cell->v[ji].z;
-		  }
-		  if(iz==(nz-1))
-		  {
+          }
+          if(iz==(nz-1))
+          {
             fptype diff = parSize - (domainMax.z - pos.z);
             if(diff > epsilon)
               cell->a[ji].z -= stiffnessCollisions*diff + damping*cell->v[ji].z;
-		  }
+          }
           //move pointer to next cell in list if end of array is reached
           if(ji == PARTICLES_PER_CELL-1) {
             cell = cell->next;
           }
         }
       }
-	}
+    }
   }
 }
 #endif
@@ -988,7 +1063,7 @@ void ProcessCollisions2MT(int tid)
   for(int iz = grids[tid].sz; iz < grids[tid].ez; ++iz)
   {
     for(int iy = grids[tid].sy; iy < grids[tid].ey; ++iy)
-	{
+    {
       for(int ix = grids[tid].sx; ix < grids[tid].ex; ++ix)
       {
 #if 0
@@ -996,84 +1071,84 @@ void ProcessCollisions2MT(int tid)
 // *** provided that a particle does not migrate more than 1 cell
 // *** per integration step. This does not appear to be the case
 // *** in the pthreads version. Serial version it seems to be OK
-	    if(!((ix==0)||(iy==0)||(iz==0)||(ix==(nx-1))||(iy==(ny-1))==(iz==(nz-1))))
-			continue;	// not on domain wall
+        if(!((ix==0)||(iy==0)||(iz==0)||(ix==(nx-1))||(iy==(ny-1))==(iz==(nz-1))))
+            continue;   // not on domain wall
 #endif
         int index = (iz*ny + iy)*nx + ix;
         Cell *cell = &cells[index];
         int np = cnumPars[index];
         for(int j = 0; j < np; ++j)
         {
-		  int ji = j % PARTICLES_PER_CELL;
+          int ji = j % PARTICLES_PER_CELL;
           Vec3 pos = cell->p[ji];
 
-		  if(ix==0)
-		  {
+          if(ix==0)
+          {
             fptype diff = pos.x - domainMin.x;
-		    if(diff < Zero)
-			{
-				cell->p[ji].x = domainMin.x - diff;
-				cell->v[ji].x = -cell->v[ji].x;
-				cell->hv[ji].x = -cell->hv[ji].x;
-			}
-		  }
-		  if(ix==(nx-1))
-		  {
+            if(diff < Zero)
+            {
+                cell->p[ji].x = domainMin.x - diff;
+                cell->v[ji].x = -cell->v[ji].x;
+                cell->hv[ji].x = -cell->hv[ji].x;
+            }
+          }
+          if(ix==(nx-1))
+          {
             fptype diff = domainMax.x - pos.x;
- 			if(diff < Zero)
-			{
-				cell->p[ji].x = domainMax.x + diff;
-				cell->v[ji].x = -cell->v[ji].x;
-				cell->hv[ji].x = -cell->hv[ji].x;
-			}
-		  }
-		  if(iy==0)
-		  {
+            if(diff < Zero)
+            {
+                cell->p[ji].x = domainMax.x + diff;
+                cell->v[ji].x = -cell->v[ji].x;
+                cell->hv[ji].x = -cell->hv[ji].x;
+            }
+          }
+          if(iy==0)
+          {
             fptype diff = pos.y - domainMin.y;
-		    if(diff < Zero)
-			{
-				cell->p[ji].y = domainMin.y - diff;
-				cell->v[ji].y = -cell->v[ji].y;
-				cell->hv[ji].y = -cell->hv[ji].y;
-			}
-		  }
-		  if(iy==(ny-1))
-		  {
+            if(diff < Zero)
+            {
+                cell->p[ji].y = domainMin.y - diff;
+                cell->v[ji].y = -cell->v[ji].y;
+                cell->hv[ji].y = -cell->hv[ji].y;
+            }
+          }
+          if(iy==(ny-1))
+          {
             fptype diff = domainMax.y - pos.y;
- 			if(diff < Zero)
-			{
-				cell->p[ji].y = domainMax.y + diff;
-				cell->v[ji].y = -cell->v[ji].y;
-				cell->hv[ji].y = -cell->hv[ji].y;
-			}
-		  }
-		  if(iz==0)
-		  {
+            if(diff < Zero)
+            {
+                cell->p[ji].y = domainMax.y + diff;
+                cell->v[ji].y = -cell->v[ji].y;
+                cell->hv[ji].y = -cell->hv[ji].y;
+            }
+          }
+          if(iz==0)
+          {
             fptype diff = pos.z - domainMin.z;
-		    if(diff < Zero)
-			{
-				cell->p[ji].z = domainMin.z - diff;
-				cell->v[ji].z = -cell->v[ji].z;
-				cell->hv[ji].z = -cell->hv[ji].z;
-			}
-		  }
-		  if(iz==(nz-1))
-		  {
+            if(diff < Zero)
+            {
+                cell->p[ji].z = domainMin.z - diff;
+                cell->v[ji].z = -cell->v[ji].z;
+                cell->hv[ji].z = -cell->hv[ji].z;
+            }
+          }
+          if(iz==(nz-1))
+          {
             fptype diff = domainMax.z - pos.z;
- 			if(diff < Zero)
-			{
-				cell->p[ji].z = domainMax.z + diff;
-				cell->v[ji].z = -cell->v[ji].z;
-				cell->hv[ji].z = -cell->hv[ji].z;
-			}
-		  }
+            if(diff < Zero)
+            {
+                cell->p[ji].z = domainMax.z + diff;
+                cell->v[ji].z = -cell->v[ji].z;
+                cell->hv[ji].z = -cell->hv[ji].z;
+            }
+          }
           //move pointer to next cell in list if end of array is reached
           if(ji == PARTICLES_PER_CELL-1) {
             cell = cell->next;
           }
         }
       }
-	}
+    }
   }
 }
 #endif
@@ -1093,19 +1168,19 @@ void AdvanceParticlesMT(int tid)
         {
           Vec3 v_half = cell->hv[j % PARTICLES_PER_CELL] + cell->a[j % PARTICLES_PER_CELL]*timeStep;
 #if defined(USE_ImpeneratableWall)
-		// N.B. The integration of the position can place the particle
-		// outside the domain. Although we could place a test in this loop
-		// we would be unnecessarily testing particles on interior cells.
-		// Therefore, to reduce the amount of computations we make a later
-		// pass on the perimiter cells to account for particle migration
-		// beyond domain
+        // N.B. The integration of the position can place the particle
+        // outside the domain. Although we could place a test in this loop
+        // we would be unnecessarily testing particles on interior cells.
+        // Therefore, to reduce the amount of computations we make a later
+        // pass on the perimiter cells to account for particle migration
+        // beyond domain
 #endif
           cell->p[j % PARTICLES_PER_CELL] += v_half * timeStep;
           cell->v[j % PARTICLES_PER_CELL] = cell->hv[j % PARTICLES_PER_CELL] + v_half;
           cell->v[j % PARTICLES_PER_CELL] *= 0.5;
           cell->hv[j % PARTICLES_PER_CELL] = v_half;
-  	  
-         
+
+
           //move pointer to next cell in list if end of array is reached
           if(j % PARTICLES_PER_CELL == PARTICLES_PER_CELL-1) {
             cell = cell->next;
@@ -1158,7 +1233,7 @@ void *AdvanceFramesMT(void *args)
   for(int i = 0; i < targs->frames; ++i) {
     AdvanceFrameMT(targs->tid);
   }
-  
+
   return NULL;
 }
 #else
