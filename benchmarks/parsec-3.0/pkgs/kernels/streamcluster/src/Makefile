@@ -10,6 +10,10 @@ ifdef version
     CXXFLAGS :=	$(CXXFLAGS) -DENABLE_THREADS -pthread
     OBJS += parsec_barrier.o
   endif
+  ifeq "$(version)" "tm"
+    CXXFLAGS :=	$(CXXFLAGS) -DENABLE_THREADS -pthread
+    OBJS += parsec_barrier.o
+  endif
   ifeq "$(version)" "tbb"
     CXXFLAGS := $(CXXFLAGS) -DTBB_VERSION
     LIBS := $(LIBS) -ltbb
