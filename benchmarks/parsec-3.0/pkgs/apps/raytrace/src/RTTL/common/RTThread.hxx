@@ -5,12 +5,17 @@
 
 #include <pthread.h>
 
+// [transmem] Add tmcondvar support
+#ifdef ENABLE_TM
+#include <tmcondvar.h>
+#endif
+
 #if !defined(_WIN32)
 
 typedef volatile int atomic_t;
 
 #if defined(__sparc__) || defined(__sparc) || defined(sparc) || defined(__SPARC__)
-#define ASI_P	0x80
+#define ASI_P   0x80
 
 #define casa(rs1, rs2, rd) ({                                      \
         u_int __rd = (uint32_t)(rd);                               \
@@ -21,13 +26,13 @@ typedef volatile int atomic_t;
 })
 
 _INLINE int atomic_add(atomic_t *v, const int c) {
-  atomic_t e, r, s;                                              
-  for (e = *v;; e = r) {                    
-            s = e + c;                                             
-            r = casa(v, e, s);                        
-            if (r == e)                                             
-                    break;                                          
-  }                                                              
+  atomic_t e, r, s;
+  for (e = *v;; e = r) {
+            s = e + c;
+            r = casa(v, e, s);
+            if (r == e)
+                    break;
+  }
   return e;
 }
 #else
@@ -45,18 +50,18 @@ _INLINE int atomic_add(atomic_t *v, const int c) {
 
 _INLINE int atomic_inc(atomic_t *v) {
   return atomic_add(v,1);
-} 
+}
 
 _INLINE int atomic_dec(atomic_t *v) {
   return atomic_add(v,-1);
-} 
+}
 
 
 #else
 
 typedef volatile LONG atomic_t;
 
-_INLINE int atomic_add(atomic_t *v, const int c) 
+_INLINE int atomic_add(atomic_t *v, const int c)
 {
   LONG value = InterlockedExchangeAdd(v,(LONG)c);
   return (int)value;
@@ -118,7 +123,7 @@ public:
 
 };
 
-#define DBG_THREAD(x) 
+#define DBG_THREAD(x)
 
 
 #ifdef NEEDS_PTHREAD_BARRIER_T_WRAPPER
@@ -126,19 +131,43 @@ class Barrier
 {
   int total;
   int waiting;
+// [transmem] Switch to tmcondvars
+#ifdef ENABLE_TM
+    tmcondvar_t* tm_cond;
+#else
   pthread_cond_t m_cond;
   pthread_mutex_t m_mutex;
+#endif
 
 public:
   void init(int count)
   {
+#ifdef ENABLE_TM
+    tm_cond = tmcondvar_create();
+#else
     pthread_mutex_init(&m_mutex,NULL);
     pthread_cond_init(&m_cond,NULL);
-    total = count; 
+#endif
+    total = count;
     waiting = 0;
   }
   void wait()
   {
+// [transmem] use TM... this is easy since the wait isn't in a loop
+#ifdef ENABLE_TM
+    __transaction_atomic {
+    ++waiting;
+    if (waiting == total)
+      {
+        tmcondvar_broadcast(tm_cond);
+        waiting = 0;
+      }
+    else
+      {
+        tmcondvar_wait(tm_cond);
+      }
+    }
+#else
     pthread_mutex_lock(&m_mutex);
     ++waiting;
     if (waiting == total)
@@ -151,6 +180,7 @@ public:
         pthread_cond_wait(&m_cond,&m_mutex);
       }
     pthread_mutex_unlock(&m_mutex);
+#endif
   }
 };
 #else
@@ -227,7 +257,12 @@ public:
 protected:
 
   volatile int m_assigned_jobs; // # of assigned jobs for client, not used for server
+    // [transmem] Replace volatile with variable always accessed within transaction
+#ifdef ENABLE_TM
+    int tm_finished_jobs; // # of completed jobs for client, marker for server
+#else
   volatile int m_finished_jobs; // # of completed jobs for client, marker for server
+#endif
   int m_threads;                // # of jobs; fo reach job task() will be called with job id
 
   static MultiThreadedTaskQueueServer m_server;
@@ -242,14 +277,24 @@ class MultiThreadedSyncPrimitive
 {
 public:
   MultiThreadedSyncPrimitive() {
+    // [transmem] configure the condvar
+#ifdef ENABLE_TM
+    tm_cond = tmcondvar_create();
+#else
     pthread_mutex_init(&m_mutex, NULL);
     pthread_cond_init(&m_cond, NULL);
+#endif
   }
   ~MultiThreadedSyncPrimitive() {
+    // [transmem] just leak the condvar
+#ifndef ENABLE_TM
     pthread_mutex_destroy(&m_mutex);
     pthread_cond_destroy(&m_cond);
+#endif
   }
 
+  // [transmem] if we use TM, we don't bother with any of these support methods
+#ifndef ENABLE_TM
   // http://node1.yo-linux.com/cgi-bin/man2html?cgi_command=pthread_mutex_lock
   #if 1
   _INLINE int  lock()      { return pthread_mutex_lock(&m_mutex);         }
@@ -266,10 +311,20 @@ public:
   _INLINE void resume()    { cout << "R" << flush; pthread_cond_signal(&m_cond);                }
   _INLINE void resumeAll() { cout << "A" << flush; pthread_cond_broadcast(&m_cond);             }
   #endif
+#endif
 
+    // [transmem] make the condvar public if we're using TM
+#ifndef ENABLE_TM
 protected:
+#endif
+
+  // [transmem] use a tmcondvar instead of mutexes and condvars
+#ifdef ENABLE_TM
+  tmcondvar_t* tm_cond;
+#else
   pthread_mutex_t m_mutex;
   pthread_cond_t  m_cond;
+#endif
 };
 
 #endif

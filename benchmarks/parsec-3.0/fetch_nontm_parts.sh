@@ -37,3 +37,6 @@ parsec-3.0-input-native.tar.gz
 # libraries with our tm build configuration
 cp pkgs/libs/gsl/parsec/gcc-pthreads.bldconf pkgs/libs/gsl/parsec/gcc-tm.bldconf
 cp pkgs/libs/libjpeg/parsec/gcc-pthreads.bldconf pkgs/libs/libjpeg/parsec/gcc-tm.bldconf
+cp pkgs/libs/libjpeg/parsec/gcc-pthreads.bldconf pkgs/libs/libjpeg/parsec/gcc-tm.bldconf
+cp pkgs/libs/mesa/parsec/gcc-pthreads.bldconf pkgs/libs/mesa/parsec/gcc-tm.bldconf
+cp pkgs/tools/cmake/parsec/gcc-pthreads.bldconf pkgs/tools/cmake/parsec/gcc-tm.bldconf

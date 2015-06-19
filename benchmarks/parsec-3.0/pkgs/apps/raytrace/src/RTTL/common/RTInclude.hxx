@@ -47,13 +47,13 @@
 // --------------------------------------------
 
 
-#define extern_inline extern inline 
+#define extern_inline extern inline
 
 
 
 #ifdef THIS_IS_APPLE
     #include <sys/malloc.h>
-#else 
+#else
     #include <malloc.h>
 #endif
 
@@ -73,7 +73,7 @@ using namespace std;
 #define PING cout << __PRETTY_FUNCTION__ << flush << endl
 #ifdef __wald__
 // force FATAL to core dump (allows debugging...)
-#define FATAL(a) { cerr << "FATAL: " << a << "(in " << __PRETTY_FUNCTION__ << ")" << endl; *((int *)0) = 1; exit(1); } 
+#define FATAL(a) { cerr << "FATAL: " << a << "(in " << __PRETTY_FUNCTION__ << ")" << endl; *((int *)0) = 1; exit(1); }
 #else
 #define FATAL(a) { cerr << "FATAL: " << a << "(in " << __PRETTY_FUNCTION__ << ")" << endl; exit(1); }
 #endif
@@ -131,7 +131,8 @@ __forceinline int __builtin_expect(int a, int p) { return a; }
 #elif defined(__INTEL_COMPILER) && (__INTEL_COMPILER >= 900)
     #define _INLINE __forceinline
 #elif defined(__GNUC__) && ((__GNUC__ > 3) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 2))) && !defined(__INTEL_COMPILER)
-    #define _INLINE inline __attribute__((always_inline))
+// [transmem] GCC 4.9.3 won't always inline, but will fail if we say to always_inline
+#define _INLINE inline /*__attribute__((always_inline))*/
 #else
     #define _INLINE inline
 #endif

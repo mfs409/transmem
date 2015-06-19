@@ -15,6 +15,11 @@
 #include <hooks.h>
 #endif
 
+// [transmem] Pull in condvar support
+#ifdef ENABLE_TM
+#include <tmcondvar.h>
+#endif
+
 using namespace RTTL;
 using namespace LRT;
 
@@ -61,7 +66,7 @@ void render()
   RTVec3f center = camera.getOrigin()+camera.getDirection();
   RTVec3f up     = camera.getUp();
 
-  lrtLookAt(lrtCamera,eye.x,eye.y,eye.z,center.x,center.y,center.z,up.x,up.y,up.z,camera.getAngle(),(float)resX/resY);	    
+  lrtLookAt(lrtCamera,eye.x,eye.y,eye.z,center.x,center.y,center.z,up.x,up.y,up.z,camera.getAngle(),(float)resX/resY);
   lrtRenderFrame(lrtFrameBuffer,lrtContext,lrtCamera); // call ray tracer to trace its frame
 
   //spin object slowly (by moving camera around it)
@@ -301,22 +306,22 @@ mesh_t generateUnitCube(node_t root)
   };
 
   mesh_t mesh = rtTriangleMesh(root);
-  
+
   /* allocate vertex array of 3-float vertices (hope the mesh's
      implementation likes three-float vertices !)... */
   data_t vertex_array = rtNewCoordArray(mesh,RT_FLOAT3);
   assert(rtValidData(vertex_array));
-  
+
   /*! ... and write data to it. as vertex array data is same as the
     format we write, there's not type conversion, but a single
     memcpy */
   rtCoords3f(vertex_array,v,8,RT_PRIVATE);
-  
+
   /*! same for the connectivity data */
   data_t index_array = rtNewIndexArray(mesh,RT_INT3);
   assert(rtValidData(index_array));
   rtIndices3i(index_array,t,12,RT_PRIVATE);
-    
+
   return mesh;
 }
 
@@ -345,6 +350,11 @@ int main(int argc, char* argv[])
 #ifdef ENABLE_PARSEC_HOOKS
   atexit(__parsec_bench_end);
   __parsec_bench_begin(__parsec_raytrace);
+#endif
+
+  // [transmem] Need to initialize a condvar context
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
 #endif
 
   rtInit(&argc, argv);
@@ -387,31 +397,31 @@ int main(int argc, char* argv[])
 
   int numThreads = options.get("nthreads", 1);
   lrtSetRenderThreads(lrtContext,numThreads);
-  
+
   int nfiles = options.vector_size("files");
 
   node_t root = rtNewRoot(RT_VISIBLE);
 
 
-  if (nfiles == 0) 
+  if (nfiles == 0)
     generateUnitCube(root); /* if no obj file is specified use unit cube */
   else
     {
       ObjParser parser;
 
       for (int fi = 0; fi < nfiles; fi++) {
-	const string& fn = (*options["files"])[fi];
-	cout << "Adding obj file: " << fn << endl;
-	parser.Parse(fn.c_str());
+    const string& fn = (*options["files"])[fi];
+    cout << "Adding obj file: " << fn << endl;
+    parser.Parse(fn.c_str());
       }
 
       RTBox3f sceneAABB = parser.getSceneAABB();
       /* initialize camera */
       if (!setViewer)
-	{
-	  cout << "Using auto camera..." << endl;
-	  SetAutoCamera(sceneAABB);
-	}
+    {
+      cout << "Using auto camera..." << endl;
+      SetAutoCamera(sceneAABB);
+    }
 
       assert(parser.vertices());
 
@@ -423,20 +433,20 @@ int main(int argc, char* argv[])
 
 
       if (parser.triangles())
-	{
-	  /*! same for the connectivity data */
-	  data_t index_array = rtNewIndexArray(mesh,RT_INT3);
-	  assert(rtValidData(index_array));
-	  rtIndices3i(index_array,(const int*)parser.getTrianglePtr(),parser.triangles(),RT_PRIVATE);
-	}
+    {
+      /*! same for the connectivity data */
+      data_t index_array = rtNewIndexArray(mesh,RT_INT3);
+      assert(rtValidData(index_array));
+      rtIndices3i(index_array,(const int*)parser.getTrianglePtr(),parser.triangles(),RT_PRIVATE);
+    }
 
       if (parser.quads())
-	{
-	  /*! same for the connectivity data */
-	  data_t index_array = rtNewIndexArray(mesh,RT_INT4);
-	  assert(rtValidData(index_array));
-	  rtIndices4i(index_array,(const int*)parser.getQuadPtr(),parser.quads(),RT_PRIVATE);
-	}
+    {
+      /*! same for the connectivity data */
+      data_t index_array = rtNewIndexArray(mesh,RT_INT4);
+      assert(rtValidData(index_array));
+      rtIndices4i(index_array,(const int*)parser.getQuadPtr(),parser.quads(),RT_PRIVATE);
+    }
 
       /* -- transfer vertices -- */
       //miniRT.addVertices(parser.getVertexPtr(),parser.getTextureCoordinatePtr(),parser.vertices());
@@ -444,10 +454,10 @@ int main(int argc, char* argv[])
       //miniRT.addMaterials(parser.getMaterialPtr(),parser.materials());
       /* -- transfer textures  -- */
       for (int i=0;i<parser.textures();i++)
-	{
-	  ImagePPM *txt = parser.getTexture(i);
-	  //miniRT.addTexture(txt->width(),txt->height(),txt->data(),RT_TEXTURE_FORMAT_RGB_UCHAR);
-	}     
+    {
+      ImagePPM *txt = parser.getTexture(i);
+      //miniRT.addTexture(txt->width(),txt->height(),txt->data(),RT_TEXTURE_FORMAT_RGB_UCHAR);
+    }
       /* -- transfer triangles -- */
       //if (parser.triangles()) miniRT.addTriangleMesh(parser.getTrianglePtr(),parser.triangles(),parser.getTriangleShaderPtr());
       /* -- transfer quads -- */
@@ -461,7 +471,7 @@ int main(int argc, char* argv[])
   lrtBuildContext(lrtContext);
 
   if (glDisplay) {
-    cout << "Starting glut..." << endl; 
+    cout << "Starting glut..." << endl;
 
     /* open glut window */
     glutDisplayFunc(display);
