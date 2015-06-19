@@ -70,12 +70,25 @@ int parsec_barrier_init(parsec_barrier_t *barrier, const parsec_barrierattr_t *a
 
   barrier->max = count;
   barrier->n = 0;
+  // [transmem] use tm for all accesses to tm_is_arrival_phase
+#ifdef ENABLE_TM
+  __transaction_atomic {
+      barrier->tm_is_arrival_phase = 1;
+  }
+#else
   barrier->is_arrival_phase = 1;
+#endif
 
+  // [transmem] configure the tmcondvar
+#ifdef ENABLE_TM
+  barrier->tm_cond = tmcondvar_create();
+  return 0;
+#else
   rv = pthread_mutex_init(&barrier->mutex, NULL);
   if(rv != 0) return rv;
   rv= pthread_cond_init(&barrier->cond, NULL);
   return rv;
+#endif
 }
 
 int parsec_barrier_destroy(parsec_barrier_t *barrier) {
@@ -83,10 +96,13 @@ int parsec_barrier_destroy(parsec_barrier_t *barrier) {
 
   assert(barrier!=NULL);
 
+  // [transmem] in TM mode we just leak the condvar
+#ifndef ENABLE_TM
   rv = pthread_mutex_destroy(&barrier->mutex);
   if(rv != 0) return rv;
   rv= pthread_cond_destroy(&barrier->cond);
   if(rv != 0) return rv;
+#endif
 
   //If the barrier is still in use then the pthread_*_destroy functions should
   //have returned an error, but we check anyway to catch any other unexpected errors.
@@ -123,6 +139,159 @@ int parsec_barrierattr_setpshared(parsec_barrierattr_t *attr, int pshared) {
   return 0;
 }
 
+// [transmem] parsec_barrier_wait is very complicated.  We will have a TM
+//            version, with no #ifdefs inside it, and the original pthread
+//            version.  For simplicity, we provide two variants, to handle
+//            the ENABLE_SPIN_BARRIER #define
+#ifdef ENABLE_TM
+#ifdef ENABLE_SPIN_BARRIER
+//Barrier usage
+int parsec_barrier_wait(parsec_barrier_t *barrier) {
+  int master;
+  int rv;
+
+  if(barrier==NULL) return EINVAL;
+
+  int phase = 1; // for handling multiple condition waits
+  bool spin1 = false; // for knowing when to spin before resuming a transaction
+  bool spin2 = false;
+  while (1) {
+      if (spin1) {
+          // spin for a fixed amount of time
+          volatile spin_counter_t i=0;
+          while(!__transaction_atomic(barrier->tm_is_arrival_phase) && i<SPIN_COUNTER_MAX) i++;
+          spin1 = false;
+      }
+      if (spin2) {
+          // spin for a fixed amount of time
+          volatile spin_counter_t i=0;
+          while(__transaction_atomic(barrier->tm_is_arrival_phase) && i<SPIN_COUNTER_MAX) i++;
+          spin2 = false;
+      }
+
+      __transaction_atomic {
+          //First we must wait to be sure that all threads from a previous barrier use had
+          //the chance to leave (departure phase complete) before we can reuse the barrier
+          if (phase == 1) {
+              //A (necessarily) unsynchronized polling loop followed by fall-back blocking
+              if(!barrier->tm_is_arrival_phase) {
+                  if (!spin1) { // I haven't spun yet...
+                      // to commit, spin, and resume, we simply mark spin true and continue
+                      spin1 = true;
+                      continue;
+                  }
+
+                  // OK, we already did a spin, so block, then resume in phase 2
+                  phase = 2;
+                  tmcondvar_wait(barrier->tm_cond);
+                  continue;
+              }
+              phase = 2;
+          } // phase 1
+          if (phase == 2) {
+              //We are guaranteed to be in an arrival phase, proceed with barrier synchronization
+              master = (barrier->n == 0); //Make first thread at barrier the master
+              barrier->n++;
+              phase = 3;
+          }
+          if (phase == 3) {
+              if(barrier->n >= barrier->max) {
+                  //This is the last thread to arrive, don't wait instead
+                  //start a new departure phase and wake up all other threads
+                  barrier->tm_is_arrival_phase = 0;
+                  tmcondvar_broadcast(barrier->tm_cond);
+                  phase = 4;
+              } else {
+                  //wait for last thread to arrive (which will end arrival phase)
+
+                  //we use again an unsynchronized polling loop followed by synchronized fall-back blocking
+                  if(barrier->tm_is_arrival_phase) {
+                      if (!spin2) {
+                          spin2 = true;
+                          continue;
+                      }
+
+                      phase = 4;
+                      tmcondvar_wait(barrier->tm_cond);
+                      continue;
+                  }
+              }
+          }
+
+          barrier->n--;
+          //last thread to leave barrier starts a new arrival phase
+          if(barrier->n == 0) {
+              barrier->tm_is_arrival_phase = 1;
+              tmcondvar_broadcast(barrier->tm_cond);
+          }
+          break;
+      } // transaction
+  } // while (1)
+
+  return (master ? PARSEC_BARRIER_SERIAL_THREAD : 0);
+}
+#else // ! ENABLE_SPIN_BARRIER
+//Barrier usage
+int parsec_barrier_wait(parsec_barrier_t *barrier) {
+  int master;
+  int rv;
+
+  if(barrier==NULL) return EINVAL;
+
+  //First we must wait to be sure that all threads from a previous barrier use had
+  //the chance to leave (departure phase complete) before we can reuse the barrier
+
+  // [transmem] We use phase in conjunction with a while loop and continue so
+  //            that we can break atomicity by committing, then on the next
+  //            iteration jump back to where we need to be.
+  int phase = 1;  // for handling the multiple cond_waits
+  // [transmem] Hoist loop out of critical section
+  while (1) {
+  __transaction_atomic {
+  if (phase == 1)  {
+  //Standard method to block on a condition variable (with simple error propagation)
+  if(!barrier->tm_is_arrival_phase) {
+      // register a commit handler, commit, goto top
+    tmcondvar_wait(barrier->tm_cond);
+    continue;
+  }
+  phase = 2;
+  } // end phase 1
+
+  if (phase == 2) {
+  //We are guaranteed to be in an arrival phase, proceed with barrier synchronization
+  master = (barrier->n == 0); //Make first thread at barrier the master
+  barrier->n++;
+  if(barrier->n >= barrier->max) {
+    //This is the last thread to arrive, don't wait instead
+    //start a new departure phase and wake up all other threads
+    barrier->tm_is_arrival_phase = 0;
+    tmcondvar_broadcast(barrier->tm_cond);
+    phase = 3;
+  } else {
+    //wait for last thread to arrive (which will end arrival phase)
+    //Standard method to block on a condition variable
+    if(barrier->tm_is_arrival_phase) {
+      phase = 3;
+      tmcondvar_wait(barrier->tm_cond);
+      continue;
+    }
+  }
+  } // end phase 2
+  barrier->n--;
+  //last thread to leave barrier starts a new arrival phase
+  if(barrier->n == 0) {
+    barrier->tm_is_arrival_phase = 1;
+    tmcondvar_broadcast(barrier->tm_cond);
+  }
+  break;
+  } // transaction
+  } // while (1)
+
+  return (master ? PARSEC_BARRIER_SERIAL_THREAD : 0);
+}
+#endif // ENABLE_SPIN_BARRIER
+#else
 //Barrier usage
 int parsec_barrier_wait(parsec_barrier_t *barrier) {
   int master;
@@ -206,6 +375,7 @@ int parsec_barrier_wait(parsec_barrier_t *barrier) {
 
   return (master ? PARSEC_BARRIER_SERIAL_THREAD : 0);
 }
+#endif
 
 
 

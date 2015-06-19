@@ -9,6 +9,10 @@
 #include <pthread.h>
 #include <errno.h>
 
+// [transmem] add tmcondvar support
+#ifdef ENABLE_TM
+# include <tmcondvar.h>
+#endif
 
 
 //This code functions as a drop-in replacement for pthread barriers.
@@ -68,11 +72,21 @@ typedef int parsec_barrierattr_t;
 
 //Type definitions
 typedef struct {
+    // [transmem] use tmcondvars and transactions
+#ifdef ENABLE_TM
+    tmcondvar_t* tm_cond;
+#else
   pthread_mutex_t mutex;
   pthread_cond_t cond;
+#endif
   unsigned max;
   volatile unsigned n;
+    // [transmem] Can't access volatiles within transactions
+#ifdef ENABLE_TM
+    int tm_is_arrival_phase;
+#else
   volatile int is_arrival_phase;
+#endif
 } parsec_barrier_t;
 
 //pthread_barrier_wait can never return EINTR, use that as default value
