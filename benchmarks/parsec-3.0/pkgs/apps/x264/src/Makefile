@@ -80,8 +80,9 @@ libx264.a: .depend $(OBJS) $(OBJASM)
 $(SONAME): .depend $(OBJS) $(OBJASM)
 	$(CC) -shared -o $@ $(OBJS) $(OBJASM) $(SOFLAGS) $(LDFLAGS)
 
+# [transmem] use CXX to build, so we can link against libtmcondvar
 x264$(EXE): $(OBJCLI) libx264.a 
-	$(CC) -o $@ $+ $(LDFLAGS)
+	$(CXX) -o $@ $+ $(LDFLAGS)
 
 checkasm: tools/checkasm.o libx264.a
 	$(CC) -o $@ $+ $(LDFLAGS)

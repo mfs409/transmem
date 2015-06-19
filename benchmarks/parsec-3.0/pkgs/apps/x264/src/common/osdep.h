@@ -75,7 +75,9 @@
 
 #if defined(__GNUC__) && (__GNUC__ > 3 || __GNUC__ == 3 && __GNUC_MINOR__ > 0)
 #define UNUSED __attribute__((unused))
-#define ALWAYS_INLINE __attribute__((always_inline)) inline
+// [transmem] This leads to breakage... switch to 'inline'
+//#define ALWAYS_INLINE __attribute__((always_inline)) inline
+#define ALWAYS_INLINE /*__attribute__((always_inline))*/ inline
 #define NOINLINE __attribute__((noinline))
 #else
 #define UNUSED

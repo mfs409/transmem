@@ -41,6 +41,11 @@
 #include <gpac/isomedia.h>
 #endif
 
+// [transmem] pull in tmcondvar support
+#ifdef ENABLE_TM
+# include <tmcondvar.h>
+#endif
+
 static int64_t gcd( int64_t a, int64_t b )
 {
     while (1)
@@ -464,6 +469,10 @@ int get_frame_total_thread( hnd_t handle )
 
 static void read_frame_thread_int( thread_input_arg_t *i )
 {
+    // [transmem] create thread context
+#ifdef ENABLE_TM
+    tmcondvar_thread_init();
+#endif
     i->status = i->h->p_read_frame( i->pic, i->h->p_handle, i->i_frame );
 }
 

@@ -24,6 +24,11 @@
 #ifndef X264_FRAME_H
 #define X264_FRAME_H
 
+// [transmem] include tmcondvar support
+#ifdef ENABLE_TM
+#include <tmcondvar.h>
+#endif
+
 /* number of pixels past the edge of the frame, for motion estimation/compensation */
 #define PADH 32
 #define PADV 32
@@ -88,8 +93,13 @@ typedef struct
     /* threading */
     int     i_lines_completed; /* in pixels */
     int     i_reference_count; /* number of threads using this frame (not necessarily the number of pointers) */
+  // [transmem] use tm instead of pthreads
+#ifdef ENABLE_TM
+  tmcondvar_t* tm_cv;
+#else
     x264_pthread_mutex_t mutex;
     x264_pthread_cond_t  cv;
+#endif
 
 } x264_frame_t;
 

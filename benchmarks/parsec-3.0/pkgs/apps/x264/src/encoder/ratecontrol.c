@@ -716,17 +716,31 @@ void x264_ratecontrol_delete( x264_t *h )
 
 void x264_ratecontrol_set_estimated_size( x264_t *h, int bits )
 {
+    // [transmem] use TM instead of locks
+#ifdef ENABLE_TM
+    __transaction_atomic {
+        h->rc->frame_size_estimated = bits;
+    }
+#else
     x264_pthread_mutex_lock( &h->fenc->mutex );
     h->rc->frame_size_estimated = bits;
     x264_pthread_mutex_unlock( &h->fenc->mutex );
+#endif
 }
 
 int x264_ratecontrol_get_estimated_size( x264_t const *h)
 {
     int size;
+    // [transmem] use TM instead of locks
+#ifdef ENABLE_TM
+    __transaction_atomic {
+        size = h->rc->frame_size_estimated;
+    }
+#else
     x264_pthread_mutex_lock( &h->fenc->mutex );
     size = h->rc->frame_size_estimated;
     x264_pthread_mutex_unlock( &h->fenc->mutex );
+#endif
     return size;
 }
 

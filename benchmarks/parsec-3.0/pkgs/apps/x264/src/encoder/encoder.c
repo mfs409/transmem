@@ -1311,6 +1311,10 @@ static void x264_thread_sync_stat( x264_t *dst, x264_t *src )
 
 static int x264_slices_write( x264_t *h )
 {
+    // [transmem] initialize thread condvar context
+#ifdef ENABLE_TM
+    tmcondvar_thread_init();
+#endif
     int i_frame_size;
 
 #ifdef HAVE_MMX

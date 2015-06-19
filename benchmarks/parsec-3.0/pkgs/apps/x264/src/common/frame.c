@@ -139,8 +139,13 @@ x264_frame_t *x264_frame_new( x264_t *h )
             CHECKED_MALLOC( frame->i_inv_qscale_factor, h->mb.i_mb_count * sizeof(uint16_t) );
     }
 
+    // [transmem] configure tmcondvar
+#ifdef ENABLE_TM
+    frame->tm_cv = tmcondvar_create();
+#else
     x264_pthread_mutex_init( &frame->mutex, NULL );
     x264_pthread_cond_init( &frame->cv, NULL );
+#endif
 
     return frame;
 
@@ -175,8 +180,11 @@ void x264_frame_delete( x264_frame_t *frame )
     x264_free( frame->mv[1] );
     x264_free( frame->ref[0] );
     x264_free( frame->ref[1] );
+    // [transmem] Leak the condvar at destroy time
+#ifndef ENABLE_TM
     x264_pthread_mutex_destroy( &frame->mutex );
     x264_pthread_cond_destroy( &frame->cv );
+#endif
     x264_free( frame );
 }
 
@@ -877,18 +885,38 @@ void x264_deblock_init( int cpu, x264_deblock_function_t *pf )
 /* threading */
 void x264_frame_cond_broadcast( x264_frame_t *frame, int i_lines_completed )
 {
+    // [transmem] use TM instead of locks
+#ifdef ENABLE_TM
+    __transaction_atomic {
+    frame->i_lines_completed = i_lines_completed;
+    tmcondvar_broadcast(frame->tm_cv);
+    }
+#else
     x264_pthread_mutex_lock( &frame->mutex );
     frame->i_lines_completed = i_lines_completed;
     x264_pthread_cond_broadcast( &frame->cv );
     x264_pthread_mutex_unlock( &frame->mutex );
+#endif
 }
 
 void x264_frame_cond_wait( x264_frame_t *frame, int i_lines_completed )
 {
+    // [transmem] use TM instead of locks
+#ifdef ENABLE_TM
+    while (1) {
+        __transaction_atomic {
+            if ( frame->i_lines_completed < i_lines_completed )
+                tmcondvar_wait(frame->tm_cv);
+            else
+                break;
+        }
+    }
+#else
     x264_pthread_mutex_lock( &frame->mutex );
     while( frame->i_lines_completed < i_lines_completed )
         x264_pthread_cond_wait( &frame->cv, &frame->mutex );
     x264_pthread_mutex_unlock( &frame->mutex );
+#endif
 }
 
 /* list operators */
