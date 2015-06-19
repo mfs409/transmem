@@ -40,3 +40,4 @@ cp pkgs/libs/libjpeg/parsec/gcc-pthreads.bldconf pkgs/libs/libjpeg/parsec/gcc-tm
 cp pkgs/libs/libjpeg/parsec/gcc-pthreads.bldconf pkgs/libs/libjpeg/parsec/gcc-tm.bldconf
 cp pkgs/libs/mesa/parsec/gcc-pthreads.bldconf pkgs/libs/mesa/parsec/gcc-tm.bldconf
 cp pkgs/tools/cmake/parsec/gcc-pthreads.bldconf pkgs/tools/cmake/parsec/gcc-tm.bldconf
+cp pkgs/tools/yasm/parsec/gcc-pthreads.bldconf pkgs/tools/yasm/parsec/gcc-tm.bldconf
