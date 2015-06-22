@@ -7,6 +7,11 @@
 #include <pthread.h>
 #endif //ENABLE_PTHREADS
 
+// [transmem] Include tmcondvar support
+#ifdef ENABLE_TM
+# include <tmcondvar.h>
+#endif
+
 //A simple ring buffer that can store a certain number of elements.
 //This is used for two purposes:
 // 1. To manage the elements inside a queue
@@ -26,8 +31,14 @@ struct _queue_t {
   int nProducers;
   int nTerminated;
 #ifdef ENABLE_PTHREADS
+  // [transmem] use the right condvars
+#ifdef ENABLE_TM
+  tmcondvar_t* tm_notEmpty;
+  tmcondvar_t* tm_notFull;
+#else
   pthread_mutex_t mutex;
   pthread_cond_t notEmpty, notFull;
+#endif
 #endif //ENABLE_PTHREADS
 };
 

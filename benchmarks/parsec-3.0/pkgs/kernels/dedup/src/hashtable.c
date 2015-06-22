@@ -4,23 +4,23 @@
 /*
  * Copyright (c) 2002, 2007 Christopher Clark, Princeton University
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- * 
+ *
  * * Redistributions of source code must retain the above copyright
  * notice, this list of conditions and the following disclaimer.
- * 
+ *
  * * Redistributions in binary form must reproduce the above copyright
  * notice, this list of conditions and the following disclaimer in the
  * documentation and/or other materials provided with the distribution.
- * 
+ *
  * * Neither the name of the original author; nor the names of any contributors
  * may be used to endorse or promote products derived from this software
  * without specific prior written permission.
- * 
- * 
+ *
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -86,12 +86,15 @@ struct hashtable * hashtable_create(unsigned int minsize,
   memset(h->table, 0, size * sizeof(struct hash_entry *));
   h->tablelength  = size;
 #ifdef ENABLE_PTHREADS
+  // [transmem] no lock array to initialize in TM mode
+#ifndef ENABLE_TM
   //allocate and initialize array with locks
   h->locks = (pthread_mutex_t *)malloc(sizeof(pthread_mutex_t) * size);
   if(NULL == h->locks) {free(h->table); free(h); return NULL;} /*oom*/
   for(pindex=0; pindex<size; pindex++) {
     pthread_mutex_init(&(h->locks[pindex]), NULL);
   }
+#endif
 #endif
 #ifdef ENABLE_DYNAMIC_EXPANSION
   h->primeindex   = pindex;
@@ -117,6 +120,8 @@ unsigned int hash(struct hashtable *h, void *k) {
 }
 
 #ifdef ENABLE_PTHREADS
+// [transmem] No getlock function in TM mode
+#ifndef ENABLE_TM
 /*****************************************************************************/
 pthread_mutex_t * hashtable_getlock(struct hashtable *h, void *k) {
   unsigned int hashvalue, index;
@@ -126,6 +131,7 @@ pthread_mutex_t * hashtable_getlock(struct hashtable *h, void *k) {
   index = indexFor(h->tablelength,hashvalue);
   return &(h->locks[index]);
 }
+#endif
 #endif
 
 #ifdef ENABLE_DYNAMIC_EXPANSION
@@ -302,10 +308,13 @@ void hashtable_destroy(struct hashtable *h, int free_values) {
     }
   }
 #ifdef ENABLE_PTHREADS
+  // [transmem] No lock table to destroy in TM mode
+#ifndef ENABLE_TM
   for(i=0; i<h->tablelength; i++) {
     pthread_mutex_destroy(&(h->locks[i]));
   }
   free(h->locks);
+#endif
 #endif
   free(h->table);
   free(h);

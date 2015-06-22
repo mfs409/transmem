@@ -54,6 +54,11 @@ int main(int argc, char** argv) {
         __parsec_bench_begin(__parsec_dedup);
 #endif //ENABLE_PARSEC_HOOKS
 
+  // [transmem] thread condvar initialization
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
+
   int32 compress = TRUE;
 
   //We force the sha1 sum to be integer-aligned, check that the length of a sha1 sum is a multiple of unsigned int
@@ -89,7 +94,7 @@ int main(int argc, char** argv) {
     case 'w':
       if (strcmp(optarg, "gzip") == 0)
         conf->compress_type = COMPRESS_GZIP;
-      else if (strcmp(optarg, "bzip2") == 0) 
+      else if (strcmp(optarg, "bzip2") == 0)
         conf->compress_type = COMPRESS_BZIP2;
       else if (strcmp(optarg, "none") == 0)
         conf->compress_type = COMPRESS_NONE;

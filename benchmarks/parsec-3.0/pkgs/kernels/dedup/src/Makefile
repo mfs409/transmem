@@ -29,6 +29,10 @@ ifdef version
     CFLAGS += -DENABLE_PTHREADS -pthread
     DEDUP_OBJ += queue.o binheap.o tree.o
   endif
+  ifeq "$(version)" "tm"
+    CFLAGS += -DENABLE_PTHREADS -pthread
+    DEDUP_OBJ += queue.o binheap.o tree.o
+  endif
 endif
 
 
@@ -37,8 +41,9 @@ all: $(TARGET)
 .c.o:
 	$(CC) -c $(CFLAGS) $< -o $@
 
+# [transmem] Need to link with G++ due to libtmcondvar
 $(TARGET): $(DEDUP_OBJ)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET) $(DEDUP_OBJ) $(LIBS)
+	$(CXX) $(CFLAGS) $(LDFLAGS) -o $(TARGET) $(DEDUP_OBJ) $(LIBS)
 
 clean:
 	rm -f *~ *.o $(TARGET)

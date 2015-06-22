@@ -9,6 +9,10 @@
 #include "mbuffer.h"
 #include "sha.h"
 
+// [transmem] Pull in condvar support
+#ifdef ENABLE_TM
+#include <tmcondvar.h>
+#endif
 
 #define CHECKBIT 123456
 
@@ -67,7 +71,7 @@ typedef int64_t  int64;
 #define O_LARGEFILE  0100000
 #endif
 
-#define EXT       ".ddp"           /* extension */ 
+#define EXT       ".ddp"           /* extension */
 #define EXT_LEN   (sizeof(EXT)-1)  /* extention length */
 
 
@@ -152,10 +156,15 @@ typedef struct _chunk_t {
     int isDuplicate;        //whether this is an original chunk or a duplicate
     chunk_state_t state;    //which type of data this chunk contains
 #ifdef ENABLE_PTHREADS
+    // [transmem] use tmcondvar instead of condvar and lock
+#ifdef ENABLE_TM
+    tmcondvar_t* tm_update;
+#else
     //once a chunk has been added to the global database accesses
     //to the state require synchronization b/c the chunk is globally viewable
     pthread_mutex_t lock;
     pthread_cond_t update;
+#endif
 #endif //ENABLE_PTHREADS
   } header;
   //The SHA1 sum of the chunk, computed by SHA1/Routing stage from the uncompressed chunk data

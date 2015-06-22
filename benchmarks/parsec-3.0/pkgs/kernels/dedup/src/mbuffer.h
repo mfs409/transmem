@@ -63,6 +63,10 @@ int mbuffer_system_destroy();
 
 //Initialize a memory buffer that has been manually or statically allocated
 //The mbuffer system will not attempt to free argument *m
+// [transmem] this is called from a transaction in encoder.c::sub_Compress
+#ifdef ENABLE_TM
+__attribute__((transaction_safe))
+#endif
 int mbuffer_create(mbuffer_t *m, size_t size);
 
 //Make a shallow copy of a memory buffer
@@ -72,10 +76,18 @@ mbuffer_t *mbuffer_clone(mbuffer_t *m);
 mbuffer_t *mbuffer_copy(mbuffer_t *m);
 
 //Free a memory buffer
+// [transmem] this is called from a transaction in encoder.c::write_chunk_to_file
+#ifdef ENABLE_TM
+__attribute__((transaction_safe))
+#endif
 void mbuffer_free(mbuffer_t *m);
 
 //Resize a memory buffer
 //Returns 0 if the operation was successful
+// [transmem] this is called from a transaction in encoder.c::sub_Compress
+#ifdef ENABLE_TM
+__attribute__((transaction_safe))
+#endif
 int mbuffer_realloc(mbuffer_t *m, size_t size);
 
 //Split a memory buffer m1 into two buffers m1 and m2 at the designated location

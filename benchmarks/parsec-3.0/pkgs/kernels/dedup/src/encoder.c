@@ -60,6 +60,14 @@
 
 #define INITIAL_SEARCH_TREE_SIZE 4096
 
+// [transmem] Workaround for EXIT_TRACE from debug.h
+#ifdef ENABLE_TM
+__attribute__((transaction_pure))
+void fast_exit(const char* message) {
+  fprintf(stderr, message);
+  exit(-1);
+}
+#endif
 
 //The configuration block defined in main
 config_t * conf;
@@ -255,6 +263,40 @@ static int create_output_file(char *outfile) {
  * This function will block if the compressed data is not available yet.
  * This function might update the state of the chunk if there are any changes.
  */
+// [transmem] TM version
+#ifdef ENABLE_TM
+static void write_chunk_to_file(int fd, chunk_t *chunk) {
+  assert(chunk!=NULL);
+
+  //Find original chunk
+  if(chunk->header.isDuplicate) chunk = chunk->compressed_data_ref;
+
+  while (1) {
+      // [transmem] Note that we need a relaxed transaction, since there is
+      //            output from this critical section.
+      //
+      // Note that we have taken care to ensure that write_file is the only
+      // unsafe code called from this transaction.
+  __transaction_relaxed {
+  if (chunk->header.state == CHUNK_STATE_UNCOMPRESSED) {
+    tmcondvar_wait(chunk->header.tm_update);
+    continue; // [transmem] commit the transaction to achieve a wait...
+  }
+
+  //state is now guaranteed to be either COMPRESSED or FLUSHED
+  if(chunk->header.state == CHUNK_STATE_COMPRESSED) {
+    //Chunk data has not been written yet, do so now
+    write_file(fd, TYPE_COMPRESS, chunk->compressed_data.n, chunk->compressed_data.ptr);
+    mbuffer_free(&chunk->compressed_data);
+    chunk->header.state = CHUNK_STATE_FLUSHED;
+  } else {
+    //Chunk data has been written to file before, just write SHA1
+    write_file(fd, TYPE_FINGERPRINT, SHA1_LEN, (unsigned char *)(chunk->sha1));
+  }
+  }
+  }
+}
+#else
 #ifdef ENABLE_PTHREADS
 //NOTE: The parallel version checks the state of each chunk to make sure the
 //      relevant data is available. If it is not then the function waits.
@@ -297,9 +339,16 @@ static void write_chunk_to_file(int fd, chunk_t *chunk) {
   }
 }
 #endif //ENABLE_PTHREADS
+#endif
 
 int rf_win;
 int rf_win_dataprocess;
+
+// [transmem] See note in next 'transmem' block
+#ifdef ENABLE_TM
+__attribute__((transaction_pure))
+extern int compress(Bytef*, uLongf*, const Bytef*, uLong);
+#endif
 
 /*
  * Computational kernel of compression stage
@@ -314,8 +363,31 @@ void sub_Compress(chunk_t *chunk) {
     assert(chunk!=NULL);
     //compress the item and add it to the database
 #ifdef ENABLE_PTHREADS
+    // [transmem] use TM instead of lock, skip the assert
+#ifdef ENABLE_TM
+    // [transmem] Warning: this is not intuitive.
+    //
+    // We have a call to "compress" in this transaction.  We can't really
+    // make "compress" transaction-safe without doing a lot of plumbing
+    // inside of the zlib library, and that would be silly.
+    //
+    // The simplifying factors are that (a) we are passing in "chunk", which
+    // is a thread-local variable, and (b) we are calling this function
+    // *only* from nontransactional code.  Consequently, it ought to be the
+    // case that, in all cases, when we call compress(), it can read directly
+    // from its source pointer:
+    //   - the data pointed to was not written by a transaction, so we don't
+    //     need instrumentation to handle read-my-write in lazy TM.
+    //   - the data pointed to is not accessible by another transaction, so
+    //     uninstrumented reads cannot participate in a race
+    //
+    // Taken together, this means we can declare compress() as pure.
+
+    __transaction_atomic {
+#else
     pthread_mutex_lock(&chunk->header.lock);
     assert(chunk->header.state == CHUNK_STATE_UNCOMPRESSED);
+#endif
 #endif //ENABLE_PTHREADS
     switch (conf->compress_type) {
       case COMPRESS_NONE:
@@ -323,7 +395,12 @@ void sub_Compress(chunk_t *chunk) {
         n = chunk->uncompressed_data.n;
         r = mbuffer_create(&chunk->compressed_data, n);
         if(r != 0) {
+          // [transmem] workaround for errors that cause termination
+#ifdef ENABLE_TM
+          fast_exit("Creation of compression buffer failed.\n");
+#else
           EXIT_TRACE("Creation of compression buffer failed.\n");
+#endif
         }
         //copy the block
         memcpy(chunk->compressed_data.ptr, chunk->uncompressed_data.ptr, chunk->uncompressed_data.n);
@@ -334,17 +411,30 @@ void sub_Compress(chunk_t *chunk) {
         n = chunk->uncompressed_data.n + (chunk->uncompressed_data.n >> 9) + 12;
         r = mbuffer_create(&chunk->compressed_data, n);
         if(r != 0) {
+          // [transmem] workaround for errors that cause termination
+#ifdef ENABLE_TM
+          fast_exit("Creation of compression buffer failed.\n");
+#else
           EXIT_TRACE("Creation of compression buffer failed.\n");
+#endif
         }
         //compress the block
         r = compress(chunk->compressed_data.ptr, &n, chunk->uncompressed_data.ptr, chunk->uncompressed_data.n);
         if (r != Z_OK) {
+          // [transmem] workaround for errors that cause termination
+#ifdef ENABLE_TM
+          fast_exit("Compression failed\n");
+#else
           EXIT_TRACE("Compression failed\n");
+#endif
         }
         //Shrink buffer to actual size
         if(n < chunk->compressed_data.n) {
           r = mbuffer_realloc(&chunk->compressed_data, n);
+          // [transmem] skip asserts in TM mode
+#ifndef ENABLE_TM
           assert(r == 0);
+#endif
         }
         break;
 #endif //ENABLE_GZIP_COMPRESSION
@@ -371,15 +461,27 @@ void sub_Compress(chunk_t *chunk) {
         break;
 #endif //ENABLE_BZIP2_COMPRESSION
       default:
-        EXIT_TRACE("Compression type not implemented.\n");
+       // [transmem] workaround for errors that cause termination
+#ifdef ENABLE_TM
+       fast_exit("Compression type not implemented.\n");
+#else
+       EXIT_TRACE("Compression type not implemented.\n");
+#endif
         break;
     }
     mbuffer_free(&chunk->uncompressed_data);
 
 #ifdef ENABLE_PTHREADS
+    // [transmem] use TM instead of locks
+#ifdef ENABLE_TM
+    chunk->header.state = CHUNK_STATE_COMPRESSED;
+    tmcondvar_broadcast(chunk->header.tm_update);
+    }
+#else
     chunk->header.state = CHUNK_STATE_COMPRESSED;
     pthread_cond_broadcast(&chunk->header.update);
     pthread_mutex_unlock(&chunk->header.lock);
+#endif
 #endif //ENABLE_PTHREADS
 
      return;
@@ -395,6 +497,10 @@ void sub_Compress(chunk_t *chunk) {
  */
 #ifdef ENABLE_PTHREADS
 void *Compress(void * targs) {
+  // [transmem] per-thread init
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
   struct thread_args *args = (struct thread_args *)targs;
   const int qid = args->tid / MAX_THREADS_PER_QUEUE;
   chunk_t * chunk;
@@ -482,8 +588,13 @@ int sub_Deduplicate(chunk_t *chunk) {
 
   //Query database to determine whether we've seen the data chunk before
 #ifdef ENABLE_PTHREADS
+  // [transmem] use TM instead of locks
+#ifdef ENABLE_TM
+  __transaction_atomic {
+#else
   pthread_mutex_t *ht_lock = hashtable_getlock(cache, (void *)(chunk->sha1));
   pthread_mutex_lock(ht_lock);
+#endif
 #endif
   entry = (chunk_t *)hashtable_search(cache, (void *)(chunk->sha1));
   isDuplicate = (entry != NULL);
@@ -491,12 +602,22 @@ int sub_Deduplicate(chunk_t *chunk) {
   if (!isDuplicate) {
     // Cache miss: Create entry in hash table and forward data to compression stage
 #ifdef ENABLE_PTHREADS
+    // [transmem] init the condvar
+#ifdef ENABLE_TM
+    chunk->header.tm_update = tmcondvar_create();
+#else
     pthread_mutex_init(&chunk->header.lock, NULL);
     pthread_cond_init(&chunk->header.update, NULL);
 #endif
+#endif
     //NOTE: chunk->compressed_data.buffer will be computed in compression stage
     if (hashtable_insert(cache, (void *)(chunk->sha1), (void *)chunk) == 0) {
+      // [transmem] workaround for errors that cause termination
+#ifdef ENABLE_TM
+      fast_exit("hashtable_insert failed");
+#else
       EXIT_TRACE("hashtable_insert failed");
+#endif
     }
   } else {
     // Cache hit: Skipping compression stage
@@ -504,7 +625,12 @@ int sub_Deduplicate(chunk_t *chunk) {
     mbuffer_free(&chunk->uncompressed_data);
   }
 #ifdef ENABLE_PTHREADS
+  // [transmem] close the transaction
+#ifdef ENABLE_TM
+  }
+#else
   pthread_mutex_unlock(ht_lock);
+#endif
 #endif
 
   return isDuplicate;
@@ -520,6 +646,10 @@ int sub_Deduplicate(chunk_t *chunk) {
  */
 #ifdef ENABLE_PTHREADS
 void * Deduplicate(void * targs) {
+  // [transmem] per-thread init
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
   struct thread_args *args = (struct thread_args *)targs;
   const int qid = args->tid / MAX_THREADS_PER_QUEUE;
   chunk_t *chunk;
@@ -619,6 +749,10 @@ void * Deduplicate(void * targs) {
  */
 #ifdef ENABLE_PTHREADS
 void *FragmentRefine(void * targs) {
+  // [transmem] per-thread init
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
   struct thread_args *args = (struct thread_args *)targs;
   const int qid = args->tid / MAX_THREADS_PER_QUEUE;
   ringbuffer_t recv_buf, send_buf;
@@ -744,7 +878,7 @@ void *FragmentRefine(void * targs) {
 }
 #endif //ENABLE_PTHREADS
 
-/* 
+/*
  * Integrate all computationally intensive pipeline
  * stages to improve cache efficiency.
  */
@@ -977,6 +1111,10 @@ void *SerialIntegratedPipeline(void * targs) {
  */
 #ifdef ENABLE_PTHREADS
 void *Fragment(void * targs){
+  // [transmem] per-thread init
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
   struct thread_args *args = (struct thread_args *)targs;
   size_t preloading_buffer_seek = 0;
   int qid = 0;
@@ -1191,6 +1329,10 @@ void *Fragment(void * targs){
  */
 #ifdef ENABLE_PTHREADS
 void *Reorder(void * targs) {
+  // [transmem] per-thread init
+#ifdef ENABLE_TM
+  tmcondvar_thread_init();
+#endif
   struct thread_args *args = (struct thread_args *)targs;
   int qid = 0;
   int fd = 0;
@@ -1248,7 +1390,7 @@ void *Reorder(void * targs) {
       chunks_per_anchor[chunk->sequence.l1num] = chunk->sequence.l2num+1;
     }
 
-    //Put chunk into local cache if it's not next in the sequence 
+    //Put chunk into local cache if it's not next in the sequence
     if(!sequence_eq(chunk->sequence, next)) {
       pos = TreeFind(chunk->sequence.l1num, T);
       if (pos == NULL) {
@@ -1402,17 +1544,17 @@ void Encode(config_t * _conf) {
   assert(!mbuffer_system_init());
 
   /* src file stat */
-  if (stat(conf->infile, &filestat) < 0) 
+  if (stat(conf->infile, &filestat) < 0)
       EXIT_TRACE("stat() %s failed: %s\n", conf->infile, strerror(errno));
 
-  if (!S_ISREG(filestat.st_mode)) 
+  if (!S_ISREG(filestat.st_mode))
     EXIT_TRACE("not a normal file: %s\n", conf->infile);
 #ifdef ENABLE_STATISTICS
   stats.total_input = filestat.st_size;
 #endif //ENABLE_STATISTICS
 
   /* src file open */
-  if((fd = open(conf->infile, O_RDONLY | O_LARGEFILE)) < 0) 
+  if((fd = open(conf->infile, O_RDONLY | O_LARGEFILE)) < 0)
     EXIT_TRACE("%s file open error %s\n", conf->infile, strerror(errno));
 
   //Load entire file into memory if requested by user
@@ -1510,7 +1652,7 @@ void Encode(config_t * _conf) {
   stats_t *threads_chunk_rv[conf->nthreads];
   stats_t *threads_compress_rv[conf->nthreads];
 
-  //join all threads 
+  //join all threads
   pthread_join(threads_process, NULL);
   for (i = 0; i < conf->nthreads; i ++)
     pthread_join(threads_anchor[i], (void **)&threads_anchor_rv[i]);
@@ -1586,7 +1728,7 @@ void Encode(config_t * _conf) {
 
 #ifdef ENABLE_STATISTICS
   /* dest file stat */
-  if (stat(conf->outfile, &filestat) < 0) 
+  if (stat(conf->outfile, &filestat) < 0)
       EXIT_TRACE("stat() %s failed: %s\n", conf->outfile, strerror(errno));
   stats.total_output = filestat.st_size;
 
