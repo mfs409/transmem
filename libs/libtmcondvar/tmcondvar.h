@@ -17,6 +17,10 @@ struct tmcondvar;
 typedef struct tmcondvar tmcondvar_t;
 
 /// create and initialize a new tmcondvar
+///
+/// NB: PARSEC may initialize condvars from within a critical section, so we
+///     need this to be transaction-safe
+__attribute__((transaction_safe))
 tmcondvar_t* tmcondvar_create();
 
 /// Register a thread so that it can use transactional condvars
