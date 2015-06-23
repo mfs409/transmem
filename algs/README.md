@@ -23,3 +23,16 @@ This folder has a libitm implementation that only supports Intel TSX or
 serial mode with no undo logs.  It can't handle transaction_cancel, but it is
 streamlined.  It also has support for oncommit handlers, so that HTM can be
 used with tmcondvars.
+
+### libitm_eager
+
+This folder has a libitm implementation that only supports three algorithms:
+ml_wt (i.e., GCC's eager, privatization-safe version of TinySTM), serial (one
+transaction at a time, self-abort possible), and serialirr (serial +
+irrevocable: no self-abort).
+
+The implementation does not have support for closed nesting, or any sort of
+HTM support.  It does still use the GCC mechanism for mode switching (a
+readers/writer lock).  This is a good baseline for implementing pure-software
+TM algorithms, since it doesn't have a lot of the complexity of GCC's TM, but
+it does present a fully general, and generally scalable, STM.
