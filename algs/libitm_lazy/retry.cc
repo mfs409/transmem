@@ -230,7 +230,7 @@ parse_default_method()
       disp = GTM::dispatch_serial();
       env += 6;
     }
-  else if (strncmp(env, "lazy", 5) == 0)
+  else if (strncmp(env, "lazy", 4) == 0)
     {
       disp = GTM::dispatch_lazy();
       env += 5;
