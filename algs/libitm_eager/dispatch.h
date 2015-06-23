@@ -236,8 +236,6 @@ void ITM_REGPARM _ITM_memset##WRITE(void *dst, int c, size_t size) \
 
 namespace GTM HIDDEN {
 
-struct gtm_transaction_cp;
-
 struct method_group
 {
   // Start using a TM method from this group. This constructs required meta
@@ -290,7 +288,7 @@ public:
   virtual bool trycommit(gtm_word& priv_time) = 0;
   // Rolls back a transaction. Called on abort or after trycommit() returned
   // false.
-  virtual void rollback(gtm_transaction_cp *cp = 0) = 0;
+  virtual void rollback() = 0;
 
   // Returns true iff this method group supports the current situation.
   // NUMBER_OF_THREADS is the current number of threads that might execute

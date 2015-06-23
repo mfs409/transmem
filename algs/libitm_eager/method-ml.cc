@@ -524,16 +524,8 @@ public:
     return true;
   }
 
-  virtual void rollback(gtm_transaction_cp *cp)
+  virtual void rollback()
   {
-    // We don't do anything for rollbacks of nested transactions.
-    // ??? We could release locks here if we snapshot writelog size.  readlog
-    // is similar.  This is just a performance optimization though.  Nested
-    // aborts should be rather infrequent, so the additional save/restore
-    // overhead for the checkpoints could be higher.
-    if (cp != 0)
-      return;
-
     gtm_thread *tx = gtm_thr();
     gtm_word overflow_value = 0;
 

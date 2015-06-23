@@ -94,7 +94,7 @@ class serialirr_dispatch : public abi_dispatch
 
   virtual gtm_restart_reason begin_or_restart() { return NO_RESTART; }
   virtual bool trycommit(gtm_word& priv_time) { return true; }
-  virtual void rollback(gtm_transaction_cp *cp) { abort(); }
+  virtual void rollback() { abort(); }
 };
 
 class serial_dispatch : public abi_dispatch
@@ -141,7 +141,7 @@ public:
   virtual bool trycommit(gtm_word& priv_time) { return true; }
   // Local undo will handle this.
   // trydropreference() need not be changed either.
-  virtual void rollback(gtm_transaction_cp *cp) { }
+  virtual void rollback() { }
 
   CREATE_DISPATCH_METHODS(virtual, )
   CREATE_DISPATCH_METHODS_MEM()

@@ -270,7 +270,7 @@ GTM::gtm_thread::rollback (bool aborting)
   undolog.rollback (this, 0);
 
   // Perform dispatch-specific rollback.
-  abi_disp()->rollback (0);
+  abi_disp()->rollback ();
 
   // Roll back all actions that are supposed to happen around the transaction.
   rollback_user_actions (0);
