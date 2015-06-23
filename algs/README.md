@@ -36,3 +36,8 @@ HTM support.  It does still use the GCC mechanism for mode switching (a
 readers/writer lock).  This is a good baseline for implementing pure-software
 TM algorithms, since it doesn't have a lot of the complexity of GCC's TM, but
 it does present a fully general, and generally scalable, STM.
+
+### libitm_lazy
+
+This folder has a libitm implementation that is similar to libitm_eager,
+except that it uses commit-time locking and redo logs (i.e., lazy TM).
