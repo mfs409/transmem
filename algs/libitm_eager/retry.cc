@@ -213,8 +213,10 @@ parse_default_method()
 {
   const char *env = getenv("ITM_DEFAULT_METHOD");
   GTM::abi_dispatch* disp = 0;
-  if (env == NULL)
-    return 0;
+  if (env == NULL) {
+      disp = GTM::dispatch_ml_wt();
+      return disp;
+  }
 
   while (isspace((unsigned char) *env))
     ++env;
