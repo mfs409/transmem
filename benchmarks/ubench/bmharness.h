@@ -20,14 +20,23 @@
 #include "timing.h"
 #include "bmconfig.h"
 
-/// A hack for making sure each thread goes to its own place
+/// A hack for making sure each thread can easily access its ID
 thread_local int thread_id;
 
 /// The benchmark class provides a standard way of doing insert/lookup/remove
-/// operations on a set
+/// operations on a set of integers
 template<class SET>
 class benchmark
 {
+    /// There is a "counts" array for counting frequency of successful and
+    /// unsuccessful inserts/lookups/removes.  This enum simplifies keeping
+    /// track of the array indices.
+    enum RES {
+        LOOKUP_T = 0, LOOKUP_F = 1,
+        INSERT_T = 2, INSERT_F = 3,
+        REMOVE_T = 4, REMOVE_F = 5
+    };
+
     /// The data structure we will manipulate
     SET* set;
 
@@ -35,7 +44,7 @@ class benchmark
     barrier* thread_barrier;
 
     /// Each iteration of the test will decide whether to insert, lookup, or
-    /// remove
+    /// remove, and then store the result to the thread-local count
     void test_iteration(uint32_t id, uint32_t* seed, int counts[]) {
         uint32_t val = rand_r(seed) % Config::CFG.elements;
         uint32_t act = rand_r(seed) % 100;
@@ -44,19 +53,19 @@ class benchmark
             __transaction_atomic {
                 res = set->lookup(val);
             }
-            counts[res?0:1]++;
+            counts[res ? LOOKUP_T : LOOKUP_F]++;
         }
         else if (act < Config::CFG.inspct) {
             __transaction_atomic {
                 res = set->insert(val);
             }
-            counts[res?2:3]++;
+            counts[res ? INSERT_T : INSERT_F]++;
         }
         else {
             __transaction_atomic {
                 res = set->remove(val);
             }
-            counts[res?4:5]++;
+            counts[res ? REMOVE_T : REMOVE_F]++;
         }
     }
 
@@ -88,9 +97,9 @@ class benchmark
         // these are for successful lookups, failed lookups,
         // successful inserts, failed inserts, successful removes,
         // and failed removes
-        int counts[6] = {0, 0, 0, 0, 0, 0};
+        int counts[6] = {0};
         uint32_t count = 0;
-        uint32_t seed = id; // not everyone needs a seed, but we have to support it
+        uint32_t seed = id; // NB: not every test needs a seed
         if (!Config::CFG.execute) {
             // run txns until alarm fires
             while (Config::CFG.running) {
@@ -114,21 +123,21 @@ class benchmark
             Config::CFG.time = getElapsedTime() - Config::CFG.time;
 
         // add this thread's count to an accumulator
+        //
+        // NB: accumulator is atomic<>, so this is not racy
         Config::CFG.txcount += count;
-        Config::CFG.lookup_hit  += counts[0];
-        Config::CFG.lookup_miss += counts[1];
-        Config::CFG.insert_hit  += counts[2];
-        Config::CFG.insert_miss += counts[3];
-        Config::CFG.remove_hit  += counts[4];
-        Config::CFG.remove_miss += counts[5];
+        Config::CFG.lookup_hit  += counts[LOOKUP_T];
+        Config::CFG.lookup_miss += counts[LOOKUP_F];
+        Config::CFG.insert_hit  += counts[INSERT_T];
+        Config::CFG.insert_miss += counts[INSERT_F];
+        Config::CFG.remove_hit  += counts[REMOVE_T];
+        Config::CFG.remove_miss += counts[REMOVE_F];
     }
 
     /// wrapper for running the experiments, since threads can't call methods
     /// directly, only functions
     static void run_wrapper(int i, benchmark<SET>* b) {
         b->run(i);
-        b->thread_barrier->arrive(i);
-        b->thread_barrier->arrive(i);
     }
 
   public:

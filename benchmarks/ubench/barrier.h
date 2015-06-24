@@ -1,3 +1,11 @@
+// -*-c++-*-
+//
+//  Copyright (C) 2015
+//  Lehigh University Department of Computer Science and Engineering
+//
+// License: Modified BSD
+//          Please see the file LICENSE for licensing information
+
 #pragma once
 
 #include <atomic>
