@@ -6,6 +6,11 @@ This folder contains benchmark codes.
 Contents
 -----
 
+### ubench
+
+Simple data structure microbenchmarks to assess low-level characteristics of
+TM implementations.
+
 ### stamp_c
 
 This is the version of STAMP from the Ruan et al. TRANSACT 2014 paper.  It
@@ -23,3 +28,9 @@ mt19937 implementation.
 This is a version of STAMP in which all ad-hoc containers are replaced with
 their C++ STL equivalents.  This corresponds to the Kilgore et al. TRANSACT
 2015 paper.
+
+### parsec-3.0
+
+This is a version of PARSEC in which the 8 benchmarks that use condition
+variables have been ported to use TM and transaction-friendly condition
+variables.
