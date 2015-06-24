@@ -41,3 +41,10 @@ it does present a fully general, and generally scalable, STM.
 
 This folder has a libitm implementation that is similar to libitm_eager,
 except that it uses commit-time locking and redo logs (i.e., lazy TM).
+
+### libitm_norec
+
+An implementation of the lazy, livelock-free NOrec algorithm.  This is not
+expected to scale on multi-chip machines, nor is it expected to do well with
+frequent small writer transactions.  However, it is a very low-overhead STM
+algorithm, and one that is useful for building hybrids.
