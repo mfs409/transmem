@@ -68,7 +68,12 @@ const float max_load_factor = 0.65;
 /*****************************************************************************/
 struct hashtable * hashtable_create(unsigned int minsize,
                                     unsigned int (*hashf) (void*),
+// [transmem] make the function pointer transaction_safe
+#ifdef ENABLE_TM
+                                    int (*eqf) (void*,void*) __attribute__((transaction_safe)),
+#else
                                     int (*eqf) (void*,void*),
+#endif
                                     int free_keys) {
   struct hashtable *h;
   unsigned int pindex, size = primes[0];

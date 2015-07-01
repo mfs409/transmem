@@ -80,8 +80,37 @@ static unsigned int hash_from_key_fn( void *k ) {
   return ((unsigned int *)k)[0];
 }
 
+// [transmem] provide tm-safe memcmp for use in transactional version of keys_equal_fn
+#ifdef ENABLE_TM
+// This code was taken from
+// http://doxygen.postgresql.org/memcmp_8c_source.html, and is covered by a
+// BSD license
+__attribute__((transaction_safe))
+static int tm_memcmp(const void *s1, const void *s2, size_t n)
+{
+    if (n != 0) {
+        const unsigned char *p1 = s1, *p2 = s2;
+        do
+        {
+            if (*p1++ != *p2++)
+                return (*--p1 - *--p2);
+        } while (--n != 0);
+    }
+    return 0;
+}
+#endif
+
+// [transmem] this is called from a transactional context
+#ifdef ENABLE_TM
+__attribute__((transaction_safe))
+#endif
 static int keys_equal_fn ( void *key1, void *key2 ) {
+  // [transmem] use tm-safe memcmp
+#ifdef ENABLE_TM
+  return (tm_memcmp(key1, key2, SHA1_LEN) == 0);
+#else
   return (memcmp(key1, key2, SHA1_LEN) == 0);
+#endif
 }
 
 //Arguments to pass to each thread
